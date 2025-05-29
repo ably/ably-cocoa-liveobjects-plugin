@@ -22,7 +22,11 @@ In order to allow the app to use modern SwiftUI features, it supports the follow
 - iOS 17 and above
 - tvOS 17 and above
 
-To run the app, open the `AblyLiveObjects.xcworkspace` workspace in Xcode and run the `AblyLiveObjectsExample` target. If you wish to run it on an iOS or tvOS device, you’ll need to set up code signing.
+To run the app:
+
+1. Open the `AblyLiveObjects.xcworkspace` workspace in Xcode.
+2. Follow the instructions inside the `Secrets.example.swift` file to add your Ably API key to the example app.
+3. Run the `AblyLiveObjectsExample` target. If you wish to run it on an iOS or tvOS device, you’ll need to set up code signing.
 
 ## Contributing
 
