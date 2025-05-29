@@ -27,14 +27,16 @@ internal class PluginImplementation: NSObject, AblyPlugin.LiveObjectsPluginProto
     private static let pluginDataKey = "LiveObjects"
 
     internal func prepare(_ channel: ARTRealtimeChannel) {
-        print("LiveObjects.Plugin received prepare(_:)")
+        let logger = PluginAPI.logger(for: channel)
+
+        logger.log("LiveObjects.Plugin received prepare(_:)", level: .debug)
         let liveObjects = DefaultLiveObjects(channel: channel)
         let box = Box(value: liveObjects)
-        AblyPlugin.PluginAPI.setPluginDataValue(box, forKey: Self.pluginDataKey, channel: channel)
+        PluginAPI.setPluginDataValue(box, forKey: Self.pluginDataKey, channel: channel)
     }
 
     internal static func objectsProperty(for channel: ARTRealtimeChannel) -> DefaultLiveObjects {
-        guard let pluginData = AblyPlugin.PluginAPI.pluginDataValue(forKey: pluginDataKey, channel: channel) else {
+        guard let pluginData = PluginAPI.pluginDataValue(forKey: pluginDataKey, channel: channel) else {
             // Plugin.prepare was not called
             fatalError("You must pass AblyLiveObjects.Plugin in the ClientOptions")
         }
