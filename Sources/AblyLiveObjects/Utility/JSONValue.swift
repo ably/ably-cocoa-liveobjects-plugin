@@ -25,7 +25,7 @@ import Foundation
 ///  ```
 ///
 /// > Note: To write a `JSONValue` that corresponds to the `null` JSON value, you must explicitly write `.null`. `JSONValue` deliberately does not implement the `ExpressibleByNilLiteral` protocol in order to avoid confusion between a value of type `JSONValue?` and a `JSONValue` with case `.null`.
-public indirect enum JSONValue: Sendable, Equatable {
+internal indirect enum JSONValue: Sendable, Equatable {
     case object([String: JSONValue])
     case array([JSONValue])
     case string(String)
@@ -36,7 +36,7 @@ public indirect enum JSONValue: Sendable, Equatable {
     // MARK: - Convenience getters for associated values
 
     /// If this `JSONValue` has case `object`, this returns the associated value. Else, it returns `nil`.
-    public var objectValue: [String: JSONValue]? {
+    internal var objectValue: [String: JSONValue]? {
         if case let .object(objectValue) = self {
             objectValue
         } else {
@@ -45,7 +45,7 @@ public indirect enum JSONValue: Sendable, Equatable {
     }
 
     /// If this `JSONValue` has case `array`, this returns the associated value. Else, it returns `nil`.
-    public var arrayValue: [JSONValue]? {
+    internal var arrayValue: [JSONValue]? {
         if case let .array(arrayValue) = self {
             arrayValue
         } else {
@@ -54,7 +54,7 @@ public indirect enum JSONValue: Sendable, Equatable {
     }
 
     /// If this `JSONValue` has case `string`, this returns the associated value. Else, it returns `nil`.
-    public var stringValue: String? {
+    internal var stringValue: String? {
         if case let .string(stringValue) = self {
             stringValue
         } else {
@@ -63,7 +63,7 @@ public indirect enum JSONValue: Sendable, Equatable {
     }
 
     /// If this `JSONValue` has case `number`, this returns the associated value. Else, it returns `nil`.
-    public var numberValue: Double? {
+    internal var numberValue: Double? {
         if case let .number(numberValue) = self {
             numberValue
         } else {
@@ -72,7 +72,7 @@ public indirect enum JSONValue: Sendable, Equatable {
     }
 
     /// If this `JSONValue` has case `bool`, this returns the associated value. Else, it returns `nil`.
-    public var boolValue: Bool? {
+    internal var boolValue: Bool? {
         if case let .bool(boolValue) = self {
             boolValue
         } else {
@@ -81,7 +81,7 @@ public indirect enum JSONValue: Sendable, Equatable {
     }
 
     /// Returns true if and only if this `JSONValue` has case `null`.
-    public var isNull: Bool {
+    internal var isNull: Bool {
         if case .null = self {
             true
         } else {
@@ -91,37 +91,37 @@ public indirect enum JSONValue: Sendable, Equatable {
 }
 
 extension JSONValue: ExpressibleByDictionaryLiteral {
-    public init(dictionaryLiteral elements: (String, JSONValue)...) {
+    internal init(dictionaryLiteral elements: (String, JSONValue)...) {
         self = .object(.init(uniqueKeysWithValues: elements))
     }
 }
 
 extension JSONValue: ExpressibleByArrayLiteral {
-    public init(arrayLiteral elements: JSONValue...) {
+    internal init(arrayLiteral elements: JSONValue...) {
         self = .array(elements)
     }
 }
 
 extension JSONValue: ExpressibleByStringLiteral {
-    public init(stringLiteral value: String) {
+    internal init(stringLiteral value: String) {
         self = .string(value)
     }
 }
 
 extension JSONValue: ExpressibleByIntegerLiteral {
-    public init(integerLiteral value: Int) {
+    internal init(integerLiteral value: Int) {
         self = .number(Double(value))
     }
 }
 
 extension JSONValue: ExpressibleByFloatLiteral {
-    public init(floatLiteral value: Double) {
+    internal init(floatLiteral value: Double) {
         self = .number(value)
     }
 }
 
 extension JSONValue: ExpressibleByBooleanLiteral {
-    public init(booleanLiteral value: Bool) {
+    internal init(booleanLiteral value: Bool) {
         self = .bool(value)
     }
 }
