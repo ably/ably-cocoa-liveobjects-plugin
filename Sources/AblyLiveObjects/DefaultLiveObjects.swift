@@ -53,11 +53,11 @@ internal class DefaultLiveObjects: Objects {
         notYetImplemented()
     }
 
-    internal func handleObjectProtocolMessage(objectMessages _: [ObjectMessage]) {
+    internal func handleObjectProtocolMessage(wireObjectMessages _: [WireObjectMessage]) {
         notYetImplemented()
     }
 
-    internal func handleObjectSyncProtocolMessage(objectMessages _: [ObjectMessage], protocolMessageChannelSerial _: String) {
+    internal func handleObjectSyncProtocolMessage(wireObjectMessages _: [WireObjectMessage], protocolMessageChannelSerial _: String) {
         notYetImplemented()
     }
 }
