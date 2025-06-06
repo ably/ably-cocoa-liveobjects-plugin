@@ -20,3 +20,6 @@ internal enum WireEnum<Known> where Known: RawRepresentable {
         }
     }
 }
+
+extension WireEnum: Sendable where Known: Sendable, Known.RawValue: Sendable {}
+

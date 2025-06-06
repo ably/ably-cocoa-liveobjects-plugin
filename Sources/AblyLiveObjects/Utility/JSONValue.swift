@@ -129,6 +129,8 @@ extension JSONValue: ExpressibleByBooleanLiteral {
 // MARK: - Bridging with ably-cocoa
 
 internal extension JSONValue {
+    // TODO revisit all of these methods and make sure they have correct documentation and only keep what's needed
+    // TODO copy across tests
     /// Creates a `JSONValue` from an ably-cocoa deserialized JSON object.
     ///
     /// Specifically, `ablyCocoaData` can be:

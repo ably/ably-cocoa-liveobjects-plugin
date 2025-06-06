@@ -57,18 +57,24 @@ internal final class DefaultInternalPlugin: NSObject, AblyPlugin.LiveObjectsInte
         }
     }
 
-    internal func decodeObjectMessage(_: [AnyHashable: Any]) -> any AblyPlugin.WireObjectMessageProtocol {
-        // TODO: do something with the dictionary
-        let wireObjectMessage = WireObjectMessage()
-        return WireObjectMessageBox(wireObjectMessage: wireObjectMessage)
+    func decodeObjectMessage(_ serialized: [String : Any], error errorPtr: AutoreleasingUnsafeMutablePointer<ARTErrorInfo?>?) -> (any WireObjectMessageProtocol)? {
+        let jsonValue = JSONValue(ablyCocoaData: serialized)
+
+        do {
+            let wireObjectMessage = try WireObjectMessage(jsonValue: jsonValue)
+            return WireObjectMessageBox(wireObjectMessage: wireObjectMessage)
+        } catch {
+            errorPtr?.pointee = error.toARTErrorInfo()
+            return nil
+        }
     }
 
-    internal func encodeObjectMessage(_ publicObjectMessage: any AblyPlugin.WireObjectMessageProtocol) -> [AnyHashable: Any] {
-        guard publicObjectMessage is WireObjectMessageBox else {
+    internal func encodeObjectMessage(_ publicObjectMessage: any AblyPlugin.WireObjectMessageProtocol) -> [String: Any] {
+        guard let wireObjectMessageBox = publicObjectMessage as? WireObjectMessageBox else {
             preconditionFailure("Expected to receive the same WireObjectMessage type as we emit")
         }
 
-        notYetImplemented()
+        return wireObjectMessageBox.wireObjectMessage.toJSONObject.toAblyCocoaDataDictionary
     }
 
     internal func onChannelAttached(_ channel: ARTRealtimeChannel, hasObjects: Bool) {

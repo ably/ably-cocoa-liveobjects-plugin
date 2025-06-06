@@ -10,6 +10,17 @@ internal enum InternalError: Error {
     internal enum Other {
         case jsonValueDecodingError(JSONValueDecodingError)
     }
+
+    /// Returns the error that this should be converted to when exposed via the SDK's public API.
+    internal func toARTErrorInfo() -> ARTErrorInfo {
+        switch self {
+        case let .errorInfo(errorInfo):
+            errorInfo
+        case let .other(other):
+            // TODO
+            notYetImplemented()
+        }
+    }
 }
 
 internal extension ARTErrorInfo {
