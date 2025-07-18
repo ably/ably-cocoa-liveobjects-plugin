@@ -665,6 +665,12 @@ internal final class InternalDefaultLiveMap: Sendable {
             let mapUpdate = DefaultLiveMapUpdate(update: previousData.mapValues { _ in .removed })
             liveObjectMutableState.emit(.update(mapUpdate), on: userCallbackQueue)
         }
+
+        /// Needed for ``InternalLiveObject`` conformance.
+        mutating func resetDataToZeroValued() {
+            // RTLM4
+            data = [:]
+        }
     }
 
     // MARK: - Helper Methods
