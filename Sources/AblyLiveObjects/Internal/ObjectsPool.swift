@@ -81,6 +81,16 @@ internal struct ObjectsPool {
                 .counter(counter, counter.replaceData(using: state))
             }
         }
+
+        /// Returns the object's RTLO3d `isTombstone` property.
+        internal var isTombstone: Bool {
+            switch self {
+            case let .counter(counter):
+                counter.isTombstone
+            case let .map(map):
+                map.isTombstone
+            }
+        }
     }
 
     /// Keyed by `objectId`.
