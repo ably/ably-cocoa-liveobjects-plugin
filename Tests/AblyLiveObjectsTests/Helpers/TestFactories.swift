@@ -408,12 +408,12 @@ struct TestFactories {
     ///
     /// This should be kept in sync with ``mapEntry``.
     static func internalMapEntry(
-        tombstone: Bool? = false,
+        tombstonedAt: Date? = nil,
         timeserial: String? = "ts1",
         data: ObjectData,
     ) -> InternalObjectsMapEntry {
         InternalObjectsMapEntry(
-            tombstone: tombstone,
+            tombstonedAt: tombstonedAt,
             timeserial: timeserial,
             data: data,
         )
@@ -442,13 +442,13 @@ struct TestFactories {
     static func internalStringMapEntry(
         key: String = "testKey",
         value: String = "testValue",
-        tombstone: Bool? = false,
+        tombstonedAt: Date? = nil,
         timeserial: String? = "ts1",
     ) -> (key: String, entry: InternalObjectsMapEntry) {
         (
             key: key,
             entry: internalMapEntry(
-                tombstone: tombstone,
+                tombstonedAt: nil,
                 timeserial: timeserial,
                 data: ObjectData(string: .string(value)),
             ),
