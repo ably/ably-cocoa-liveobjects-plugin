@@ -32,19 +32,19 @@ internal final class PublicDefaultRealtimeObjects: RealtimeObjects {
     }
 
     internal func createMap(entries: [String: LiveMapValue]) async throws(ARTErrorInfo) -> any LiveMap {
-        try await proxied.createMap(entries: entries)
+        try await proxied.createMap(entries: entries, coreSDK: coreSDK)
     }
 
     internal func createMap() async throws(ARTErrorInfo) -> any LiveMap {
-        try await proxied.createMap()
+        try await proxied.createMap(coreSDK: coreSDK)
     }
 
     internal func createCounter(count: Double) async throws(ARTErrorInfo) -> any LiveCounter {
-        try await proxied.createCounter(count: count)
+        try await proxied.createCounter(count: count, coreSDK: coreSDK)
     }
 
     internal func createCounter() async throws(ARTErrorInfo) -> any LiveCounter {
-        try await proxied.createCounter()
+        try await proxied.createCounter(coreSDK: coreSDK)
     }
 
     internal func batch(callback: sending BatchCallback) async throws {
