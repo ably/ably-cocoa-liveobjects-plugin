@@ -404,6 +404,21 @@ struct TestFactories {
         )
     }
 
+    /// Creates an InternalObjectsMapEntry with sensible defaults
+    ///
+    /// This should be kept in sync with ``mapEntry``.
+    static func internalMapEntry(
+        tombstonedAt: Date? = nil,
+        timeserial: String? = "ts1",
+        data: ObjectData,
+    ) -> InternalObjectsMapEntry {
+        InternalObjectsMapEntry(
+            tombstonedAt: tombstonedAt,
+            timeserial: timeserial,
+            data: data,
+        )
+    }
+
     /// Creates a map entry with string data
     static func stringMapEntry(
         key: String = "testKey",
@@ -415,6 +430,25 @@ struct TestFactories {
             key: key,
             entry: mapEntry(
                 tombstone: tombstone,
+                timeserial: timeserial,
+                data: ObjectData(string: .string(value)),
+            ),
+        )
+    }
+
+    /// Creates an internal map entry with string data
+    ///
+    /// This should be kept in sync with ``stringMapEntry``.
+    static func internalStringMapEntry(
+        key: String = "testKey",
+        value: String = "testValue",
+        tombstonedAt: Date? = nil,
+        timeserial: String? = "ts1",
+    ) -> (key: String, entry: InternalObjectsMapEntry) {
+        (
+            key: key,
+            entry: internalMapEntry(
+                tombstonedAt: nil,
                 timeserial: timeserial,
                 data: ObjectData(string: .string(value)),
             ),
