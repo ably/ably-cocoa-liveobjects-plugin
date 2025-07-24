@@ -367,4 +367,167 @@ struct ObjectsPoolTests {
             #expect(pool.entries["map:toremove@1"] == nil)
         }
     }
+
+    /// Tests for the `getOrCreateCounter` and `getOrCreateMap` methods
+    struct GetOrCreateTests {
+        @Test
+        func getOrCreateCounter_returnsExistingCounter() {
+            let logger = TestLogger()
+            let userCallbackQueue = DispatchQueue.main
+            let clock = MockSimpleClock()
+
+            // Create a counter in the pool first
+            let existingCounter = InternalDefaultLiveCounter.createZeroValued(
+                objectID: "counter:test@123",
+                logger: logger,
+                userCallbackQueue: userCallbackQueue,
+                clock: clock,
+            )
+            var pool = ObjectsPool(
+                logger: logger,
+                userCallbackQueue: userCallbackQueue,
+                clock: clock,
+                testsOnly_otherEntries: ["counter:test@123": .counter(existingCounter)],
+            )
+
+            // Create a creation operation with the same object ID as the existing counter
+            let creationOperation = ObjectCreationHelpers.ObjectCreationOperation(
+                objectID: "counter:test@123",
+                operation: ObjectOperation(
+                    action: .known(.counterCreate),
+                    objectId: "counter:test@123",
+                    counter: WireObjectsCounter(count: NSNumber(value: 42.0)),
+                    nonce: "testnonce",
+                    initialValue: "{\"action\":3,\"counter\":{\"count\":42}}",
+                ),
+                objectMessage: OutboundObjectMessage(
+                    operation: ObjectOperation(
+                        action: .known(.counterCreate),
+                        objectId: "counter:test@123",
+                        counter: WireObjectsCounter(count: NSNumber(value: 42.0)),
+                        nonce: "testnonce",
+                        initialValue: "{\"action\":3,\"counter\":{\"count\":42}}",
+                    ),
+                ),
+            )
+
+            // Should return the existing counter
+            let result = pool.getOrCreateCounter(
+                creationOperation: creationOperation,
+                logger: logger,
+                userCallbackQueue: userCallbackQueue,
+                clock: clock,
+            )
+
+            #expect(result === existingCounter)
+        }
+
+        @Test
+        func getOrCreateCounter_createsNewCounterWhenNotExists() {
+            let logger = TestLogger()
+            let userCallbackQueue = DispatchQueue.main
+            let clock = MockSimpleClock()
+            var pool = ObjectsPool(logger: logger, userCallbackQueue: userCallbackQueue, clock: clock)
+
+            // Create a creation operation
+            let creationOperation = ObjectCreationHelpers.creationOperationForLiveCounter(
+                count: 42.0,
+                timestamp: Date(),
+            )
+
+            // Should create a new counter
+            let result = pool.getOrCreateCounter(
+                creationOperation: creationOperation,
+                logger: logger,
+                userCallbackQueue: userCallbackQueue,
+                clock: clock,
+            )
+
+            #expect(result.objectID == creationOperation.objectID)
+            #expect(pool.entries[creationOperation.objectID]?.counterValue === result)
+        }
+
+        @Test
+        func getOrCreateMap_returnsExistingMap() {
+            let logger = TestLogger()
+            let userCallbackQueue = DispatchQueue.main
+            let clock = MockSimpleClock()
+
+            // Create a map in the pool first
+            let existingMap = InternalDefaultLiveMap.createZeroValued(
+                objectID: "map:test@123",
+                logger: logger,
+                userCallbackQueue: userCallbackQueue,
+                clock: clock,
+            )
+            var pool = ObjectsPool(
+                logger: logger,
+                userCallbackQueue: userCallbackQueue,
+                clock: clock,
+                testsOnly_otherEntries: ["map:test@123": .map(existingMap)],
+            )
+
+            // Create a creation operation with the same object ID as the existing map
+            let creationOperation = ObjectCreationHelpers.ObjectCreationOperation(
+                objectID: "map:test@123",
+                operation: ObjectOperation(
+                    action: .known(.mapCreate),
+                    objectId: "map:test@123",
+                    map: ObjectsMap(
+                        semantics: .known(.lww),
+                        entries: [:],
+                    ),
+                    nonce: "testnonce",
+                    initialValue: "{\"action\":0,\"map\":{\"semantics\":0,\"entries\":{}}}",
+                ),
+                objectMessage: OutboundObjectMessage(
+                    operation: ObjectOperation(
+                        action: .known(.mapCreate),
+                        objectId: "map:test@123",
+                        map: ObjectsMap(
+                            semantics: .known(.lww),
+                            entries: [:],
+                        ),
+                        nonce: "testnonce",
+                        initialValue: "{\"action\":0,\"map\":{\"semantics\":0,\"entries\":{}}}",
+                    ),
+                ),
+            )
+
+            // Should return the existing map
+            let result = pool.getOrCreateMap(
+                creationOperation: creationOperation,
+                logger: logger,
+                userCallbackQueue: userCallbackQueue,
+                clock: clock,
+            )
+
+            #expect(result === existingMap)
+        }
+
+        @Test
+        func getOrCreateMap_createsNewMapWhenNotExists() {
+            let logger = TestLogger()
+            let userCallbackQueue = DispatchQueue.main
+            let clock = MockSimpleClock()
+            var pool = ObjectsPool(logger: logger, userCallbackQueue: userCallbackQueue, clock: clock)
+
+            // Create a creation operation
+            let creationOperation = ObjectCreationHelpers.creationOperationForLiveMap(
+                entries: [:],
+                timestamp: Date(),
+            )
+
+            // Should create a new map
+            let result = pool.getOrCreateMap(
+                creationOperation: creationOperation,
+                logger: logger,
+                userCallbackQueue: userCallbackQueue,
+                clock: clock,
+            )
+
+            #expect(result.objectID == creationOperation.objectID)
+            #expect(pool.entries[creationOperation.objectID]?.mapValue === result)
+        }
+    }
 }
