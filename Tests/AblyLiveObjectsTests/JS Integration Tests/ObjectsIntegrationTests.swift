@@ -119,30 +119,44 @@ private let objectsFixturesChannel = "objects_fixtures"
 
 /// The output of `forScenarios`. One element of the one-dimensional arguments array that is passed to a Swift Testing test.
 private struct TestCase<Context>: Identifiable, CustomStringConvertible {
+    init(disabled: Bool, scenario: TestScenario<Context>, baseOptions: ClientHelper.PartialClientOptions, baseChannelName: String) {
+        self.disabled = disabled
+        self.scenario = scenario
+        self.baseOptions = baseOptions
+        self.baseChannelName = baseChannelName
+    }
+
     var disabled: Bool
     var scenario: TestScenario<Context>
-    var options: ClientHelper.PartialClientOptions
-    var channelNameBase: String
+    private var baseOptions: ClientHelper.PartialClientOptions
+    private var baseChannelName: String
 
     /// This `Identifiable` conformance allows us to re-run individual test cases from the Xcode UI (https://developer.apple.com/documentation/testing/parameterizedtesting#Run-selected-test-cases)
     var id: TestCaseID {
-        .init(description: scenario.description, options: options)
+        .init(description: scenario.description, options: baseOptions)
     }
 
     /// This seems to determine the nice name that you see for this when it's used as a test case parameter. (I can't see anywhere that this is documented; found it by experimentation).
     var description: String {
         var result = scenario.description
 
-        if let useBinaryProtocol = options.useBinaryProtocol {
+        if let useBinaryProtocol = baseOptions.useBinaryProtocol {
             result += " (\(useBinaryProtocol ? "binary" : "text"))"
         }
 
         return result
     }
 
-    /// Generates a unique channel name based on ``channelNameBase``.
-    func generateUniqueChannelName() -> String {
-        "\(UUID()) \(channelNameBase)"
+    /// Generates a unique channel name based on ``baseChannelName``.
+    func generateUniqueChannelName(for test: Test) -> String {
+        "\(test.id) \(baseChannelName)"
+    }
+
+    /// Generates client options based on ``baseOptions``, so that the log messages emitted by a client identify the test execution in which the client created.
+    func options(for test: Test) -> ClientHelper.PartialClientOptions {
+        var options = baseOptions
+        options.logIdentifier = test.id.uuidString
+        return options
     }
 }
 
@@ -171,12 +185,12 @@ private func forScenarios<Context>(_ scenarios: [TestScenario<Context>]) -> [Tes
                 return .init(
                     disabled: scenario.disabled,
                     scenario: scenario,
-                    options: clientOptions,
-                    channelNameBase: "\(scenario.description) \(useBinaryProtocol ? "binary" : "text")",
+                    baseOptions: clientOptions,
+                    baseChannelName: "\(scenario.description) \(useBinaryProtocol ? "binary" : "text")",
                 )
             }
         } else {
-            return [.init(disabled: scenario.disabled, scenario: scenario, options: clientOptions, channelNameBase: scenario.description)]
+            return [.init(disabled: scenario.disabled, scenario: scenario, baseOptions: clientOptions, baseChannelName: scenario.description)]
         }
     }
     .flatMap(\.self)
@@ -219,7 +233,7 @@ private actor ObjectsFixturesTrait: SuiteTrait, TestScoping {
 
     private static let setupManager = SetupManager()
 
-    func provideScope(for _: Test, testCase _: Test.Case?, performing function: () async throws -> Void) async throws {
+    func provideScope(for _: Testing.Test, testCase _: Testing.Test.Case?, performing function: () async throws -> Void) async throws {
         try await Self.setupManager.setUpFixtures()
         try await function()
     }
@@ -715,9 +729,11 @@ private struct ObjectsIntegrationTests {
             return
         }
 
+        let test = Test()
+
         let objectsHelper = try await ObjectsHelper()
-        let client = try await realtimeWithObjects(options: testCase.options)
-        let channelName = testCase.generateUniqueChannelName()
+        let client = try await realtimeWithObjects(options: testCase.options(for: test))
+        let channelName = testCase.generateUniqueChannelName(for: test)
 
         try await monitorConnectionThenCloseAndFinishAsync(client) {
             let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
@@ -734,7 +750,7 @@ private struct ObjectsIntegrationTests {
                     channelName: channelName,
                     channel: channel,
                     client: client,
-                    clientOptions: testCase.options,
+                    clientOptions: testCase.options(for: test),
                 ),
             )
         }
