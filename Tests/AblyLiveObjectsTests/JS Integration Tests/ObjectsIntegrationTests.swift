@@ -122,7 +122,7 @@ private struct TestCase<Context>: Identifiable, CustomStringConvertible {
     var disabled: Bool
     var scenario: TestScenario<Context>
     var options: ClientHelper.PartialClientOptions
-    var channelName: String
+    var channelNameBase: String
 
     /// This `Identifiable` conformance allows us to re-run individual test cases from the Xcode UI (https://developer.apple.com/documentation/testing/parameterizedtesting#Run-selected-test-cases)
     var id: TestCaseID {
@@ -138,6 +138,11 @@ private struct TestCase<Context>: Identifiable, CustomStringConvertible {
         }
 
         return result
+    }
+
+    /// Generates a unique channel name based on ``channelNameBase``.
+    func generateUniqueChannelName() -> String {
+        "\(UUID()) \(channelNameBase)"
     }
 }
 
@@ -167,11 +172,11 @@ private func forScenarios<Context>(_ scenarios: [TestScenario<Context>]) -> [Tes
                     disabled: scenario.disabled,
                     scenario: scenario,
                     options: clientOptions,
-                    channelName: "\(scenario.description) \(useBinaryProtocol ? "binary" : "text")",
+                    channelNameBase: "\(scenario.description) \(useBinaryProtocol ? "binary" : "text")",
                 )
             }
         } else {
-            return [.init(disabled: scenario.disabled, scenario: scenario, options: clientOptions, channelName: scenario.description)]
+            return [.init(disabled: scenario.disabled, scenario: scenario, options: clientOptions, channelNameBase: scenario.description)]
         }
     }
     .flatMap(\.self)
@@ -712,9 +717,10 @@ private struct ObjectsIntegrationTests {
 
         let objectsHelper = try await ObjectsHelper()
         let client = try await realtimeWithObjects(options: testCase.options)
+        let channelName = testCase.generateUniqueChannelName()
 
         try await monitorConnectionThenCloseAndFinishAsync(client) {
-            let channel = client.channels.get(testCase.channelName, options: channelOptionsWithObjects())
+            let channel = client.channels.get(channelName, options: channelOptionsWithObjects())
             let objects = channel.objects
 
             try await channel.attachAsync()
@@ -725,7 +731,7 @@ private struct ObjectsIntegrationTests {
                     objects: objects,
                     root: root,
                     objectsHelper: objectsHelper,
-                    channelName: testCase.channelName,
+                    channelName: channelName,
                     channel: channel,
                     client: client,
                     clientOptions: testCase.options,
