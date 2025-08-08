@@ -3046,6 +3046,60 @@ private struct ObjectsIntegrationTests {
                     try await subscriptionPromise
                 }
             ),
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: false,
+                description: "can unsubscribe from LiveCounter updates via returned unsubscribe callback",
+                action: { ctx in
+                    let counter = try #require(ctx.root.get(key: ctx.sampleCounterKey)?.liveCounterValue)
+                    
+                    actor CallbackTracker {
+                        private var callbackCalled = 0
+                        
+                        func increment() {
+                            callbackCalled += 1
+                        }
+                        
+                        func getCount() -> Int {
+                            return callbackCalled
+                        }
+                    }
+                    
+                    let tracker = CallbackTracker()
+                    
+                    async let subscriptionPromise: Void = withCheckedThrowingContinuation { continuation in
+                        do {
+                            try counter.subscribe { _, subscriptionResponse in
+                                // unsubscribe from future updates after the first call - do this synchronously
+                                subscriptionResponse.unsubscribe()
+                                Task {
+                                    await tracker.increment()
+                                    continuation.resume()
+                                }
+                            }
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                    
+                    let increments = 3
+                    for i in 0..<increments {
+                        let counterUpdatesStream = try counter.updates()
+                        async let counterUpdatedPromise: Void = waitForCounterUpdate(counterUpdatesStream)
+                        _ = try await ctx.objectsHelper.operationRequest(
+                            channelName: ctx.channelName,
+                            opBody: ctx.objectsHelper.counterIncRestOp(objectId: ctx.sampleCounterObjectId, number: 1)
+                        )
+                        await counterUpdatedPromise
+                    }
+                    
+                    try await subscriptionPromise
+                    
+                    #expect(try counter.value == 3, "Check counter has final expected value after all increments")
+                    let callbackCount = await tracker.getCount()
+                    #expect(callbackCount == 1, "Check subscription callback was only called once")
+                }
+            ),
         ]
     }
     
