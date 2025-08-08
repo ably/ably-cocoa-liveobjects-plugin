@@ -146,7 +146,7 @@ func base64Decode(_ string: String) -> Data
 - Requires precise timing and state management
 - Tests complex interaction between sync and operations
 
-#### Step 3f: Error Handling Scenarios (Medium Risk)
+#### Step 3f: Error Handling Scenarios (Medium Risk) — In progress. Has test failures and am currently trying to work out how to handle binary data; might require us to switch to using WireValue in the tests
 **clientConfigurationScenarios** - Test various error conditions
 - 6 scenarios testing channel state and mode validation
 - Requires channel state manipulation

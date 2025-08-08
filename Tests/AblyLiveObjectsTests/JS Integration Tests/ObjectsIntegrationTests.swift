@@ -239,6 +239,12 @@ private struct ObjectsIntegrationTests {
             var channel: ARTRealtimeChannel
             var client: ARTRealtime
             var clientOptions: ClientHelper.PartialClientOptions
+
+            /// Whether the client in this test is using the binary protocol.
+            var useBinaryProtocol: Bool {
+                // This saves us from having to use private API to interrogate whether the binary protocol is being used (which is what the JS tests do), at the cost of having to duplicate the fact that binary is the default.
+                clientOptions.useBinaryProtocol ?? true
+            }
         }
 
         static let scenarios: [TestScenario<Context>] = {
