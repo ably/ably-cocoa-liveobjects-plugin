@@ -1,0 +1,2 @@
+- [ ] it has missed out some of the primitiveKeyData (e.g. max integer)
+- [ ] the primitiveKeyData need DRYing up
