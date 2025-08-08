@@ -2280,6 +2280,418 @@ private struct ObjectsIntegrationTests {
                         // making JS key validation tests unnecessary
                     }
                 ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "Objects.createCounter sends COUNTER_CREATE operation",
+                    action: { ctx in
+                        let objects = ctx.objects
+                        
+                        // Define counter fixtures similar to JS test
+                        let countersFixtures: [(name: String, count: Double?)] = [
+                            (name: "emptyCounter", count: nil),
+                            (name: "zeroCounter", count: 0),
+                            (name: "valueCounter", count: 10),
+                            (name: "negativeValueCounter", count: -10),
+                            (name: "maxSafeIntegerCounter", count: Double(Int.max)),
+                            (name: "negativeMaxSafeIntegerCounter", count: -Double(Int.max))
+                        ]
+                        
+                        let counters = try await withThrowingTaskGroup(of: (any LiveCounter).self, returning: [any LiveCounter].self) { group in
+                            for fixture in countersFixtures {
+                                group.addTask {
+                                    if let count = fixture.count {
+                                        return try await objects.createCounter(count: count)
+                                    } else {
+                                        return try await objects.createCounter()
+                                    }
+                                }
+                            }
+                            
+                            var results: [any LiveCounter] = []
+                            while let counter = try await group.next() {
+                                results.append(counter)
+                            }
+                            return results
+                        }
+                        
+                        for (i, counter) in counters.enumerated() {
+                            let fixture = countersFixtures[i]
+                            
+                            // Note: counter is guaranteed to exist by Swift type system
+                            // Note: Type check omitted - guaranteed by Swift type system that counter is PublicLiveCounter
+                            #expect(try counter.value == fixture.count ?? 0, "Check counter #\(i + 1) has expected initial value")
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "LiveCounter created with Objects.createCounter can be assigned to the object tree",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objects = ctx.objects
+                        
+                        let counterCreatedPromiseUpdates = try root.updates()
+                        async let counterCreatedPromise: Void = waitForMapKeyUpdate(counterCreatedPromiseUpdates, "counter")
+                        
+                        let counter = try await objects.createCounter(count: 1)
+                        try await root.set(key: "counter", value: .liveCounter(counter))
+                        _ = await counterCreatedPromise
+                        
+                        // Note: Type check omitted - guaranteed by Swift type system that counter is PublicLiveCounter
+                        let rootCounter = try #require(root.get(key: "counter")?.liveCounterValue)
+                        // Note: Type check omitted - guaranteed by Swift type system that rootCounter is PublicLiveCounter
+                        #expect(rootCounter === counter, "Check counter object on root is the same as from create method")
+                        #expect(try rootCounter.value == 1, "Check counter assigned to the object tree has the expected value")
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "Objects.createCounter can return LiveCounter with initial value without applying CREATE operation",
+                    action: { ctx in
+                        let objects = ctx.objects
+                        
+                        // TODO: Implement test helper to prevent publishing of ops to realtime
+                        // This requires SDK to provide a test hook to replace Objects.publish method
+                        fatalError("TODO: Need SDK test hook to replace Objects.publish method to prevent publishing ops")
+                        
+                        // This test would verify that counter gets initial value even when CREATE op is not published
+                        // let counter = try await objects.createCounter(initialValue: 1)
+                        // #expect(try counter.value == 1, "Check counter has expected initial value")
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "Objects.createCounter can return LiveCounter with initial value from applied CREATE operation",
+                    action: { ctx in
+                        let objects = ctx.objects
+                        let objectsHelper = ctx.objectsHelper
+                        let channel = ctx.channel
+                        
+                        // TODO: Implement test helper to replace Objects.publish method
+                        // This requires SDK to provide a test hook to replace Objects.publish method
+                        fatalError("TODO: Need SDK test hook to replace Objects.publish method to echo CREATE op with forged initial value")
+                        
+                        // This test would verify that counter gets initialized with value from CREATE op instead of local value
+                        // Instead of sending CREATE op to realtime, echo it immediately to client with forged initial value
+                        // so we can check that counter gets initialized with a value from a CREATE op
+                        //
+                        // let counter = try await objects.createCounter(initialValue: 1)
+                        // counter should be created with forged initial value instead of the actual one
+                        // #expect(try counter.value == 10, "Check counter value has the expected initial value from a CREATE operation")
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "initial value is not double counted for LiveCounter from Objects.createCounter when CREATE op is received",
+                    action: { ctx in
+                        let objects = ctx.objects
+                        let objectsHelper = ctx.objectsHelper
+                        let channel = ctx.channel
+                        
+                        // TODO: Implement test helper to prevent publishing of ops to realtime
+                        // This requires SDK to provide a test hook to replace Objects.publish method
+                        fatalError("TODO: Need SDK test hook to replace Objects.publish and get object ID to inject CREATE op")
+                        
+                        // This test would verify that initial value is not double counted when CREATE op is received
+                        // Prevent publishing of ops to realtime so we can guarantee order of operations
+                        // Create counter locally, should have an initial value set
+                        // Then inject CREATE op for a counter with a forged value. it should not be applied
+                        //
+                        // let counter = try await objects.createCounter(initialValue: 1)
+                        // let counterId = counter.getObjectId() // Need SDK test hook for this
+                        // Now inject CREATE op for a counter with a forged value. it should not be applied
+                        // await objectsHelper.processObjectOperationMessageOnChannel(...)
+                        // #expect(try counter.value == 1, "Check counter initial value is not double counted after being created and receiving CREATE operation")
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "Objects.createCounter throws on invalid input",
+                    action: { ctx in
+                        let objects = ctx.objects
+                        
+                        // Test invalid numeric values - Swift type system prevents most invalid types
+                        // OMITTED from JS tests due to Swift type system: objects.createCounter(null),
+                        // objects.createCounter('foo'), objects.createCounter(BigInt(1)), objects.createCounter(true),
+                        // objects.createCounter(Symbol()), objects.createCounter({}), objects.createCounter([]),
+                        // objects.createCounter(root) - all prevented by Swift's type system
+                        await #expect(throws: Error.self, "Counter value should be a valid number") {
+                            try await objects.createCounter(count: Double.nan)
+                        }
+                        await #expect(throws: Error.self, "Counter value should be a valid number") {
+                            try await objects.createCounter(count: Double.infinity)
+                        }
+                        await #expect(throws: Error.self, "Counter value should be a valid number") {
+                            try await objects.createCounter(count: -Double.infinity)
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "Objects.createMap sends MAP_CREATE operation with primitive values",
+                    action: { ctx in
+                        let objects = ctx.objects
+                        
+                        // Define primitive key data similar to JS test
+                        let primitiveKeyData: [(key: String, data: [String: JSONValue], swiftValue: Any)] = [
+                            (key: "stringKey", data: ["string": .string("stringValue")], swiftValue: "stringValue"),
+                            (key: "emptyStringKey", data: ["string": .string("")], swiftValue: ""),
+                            (key: "bytesKey", data: ["bytes": .string("eyJwcm9kdWN0SWQiOiAiMDAxIiwgInByb2R1Y3ROYW1lIjogImNhciJ9")], swiftValue: Data(base64Encoded: "eyJwcm9kdWN0SWQiOiAiMDAxIiwgInByb2R1Y3ROYW1lIjogImNhciJ9")!),
+                            (key: "emptyBytesKey", data: ["bytes": .string("")], swiftValue: Data(base64Encoded: "")!),
+                            (key: "numberKey", data: ["number": .number(1)], swiftValue: 1.0),
+                            (key: "zeroKey", data: ["number": .number(0)], swiftValue: 0.0),
+                            (key: "trueKey", data: ["boolean": .bool(true)], swiftValue: true),
+                            (key: "falseKey", data: ["boolean": .bool(false)], swiftValue: false)
+                        ]
+                        
+                        // Define primitive maps fixtures similar to JS test
+                        let primitiveMapsFixtures: [(name: String, entries: [String: Any]?)] = [
+                            (name: "emptyMap", entries: nil),
+                            (name: "valuesMap", entries: Dictionary(uniqueKeysWithValues: primitiveKeyData.map { ($0.key, $0.swiftValue) }))
+                        ]
+                        
+                        let maps = try await withThrowingTaskGroup(of: (any LiveMap).self, returning: [any LiveMap].self) { group in
+                            for mapFixture in primitiveMapsFixtures {
+                                group.addTask {
+                                    if let entries = mapFixture.entries {
+                                        let liveMapEntries = try entries.mapValues { value -> LiveMapValue in
+                                            switch value {
+                                            case let data as Data:
+                                                return .primitive(.data(data))
+                                            case let string as String:
+                                                return .primitive(.string(string))
+                                            case let number as Double:
+                                                return .primitive(.number(number))
+                                            case let bool as Bool:
+                                                return .primitive(.bool(bool))
+                                            case let counter as any LiveCounter:
+                                                return .liveCounter(counter)
+                                            case let map as any LiveMap:
+                                                return .liveMap(map)
+                                            default:
+                                                throw ARTErrorInfo.create(withCode: Int(ARTErrorCode.badRequest.rawValue), message: "Unsupported map value data type")
+                                            }
+                                        }
+                                        return try await objects.createMap(entries: liveMapEntries)
+                                    } else {
+                                        return try await objects.createMap()
+                                    }
+                                }
+                            }
+                            
+                            var results: [any LiveMap] = []
+                            while let map = try await group.next() {
+                                results.append(map)
+                            }
+                            return results
+                        }
+                        
+                        for (i, map) in maps.enumerated() {
+                            let fixture = primitiveMapsFixtures[i]
+                            
+                            // Note: map is guaranteed to exist by Swift type system
+                            // Note: Type check omitted - guaranteed by Swift type system that map is PublicLiveMap
+                            
+                            #expect(try map.size == (fixture.entries?.count ?? 0), "Check map #\(i + 1) has correct number of keys")
+                            
+                            if let entries = fixture.entries {
+                                for (key, expectedValue) in entries {
+                                    let actualValue = try map.get(key: key)
+                                    
+                                    switch expectedValue {
+                                    case let expectedData as Data:
+                                        let actualData = try #require(actualValue?.dataValue)
+                                        #expect(actualData == expectedData, "Check map #\(i + 1) has correct value for \"\(key)\" key")
+                                    case let expectedString as String:
+                                        let actualString = try #require(actualValue?.stringValue)
+                                        #expect(actualString == expectedString, "Check map #\(i + 1) has correct value for \"\(key)\" key")
+                                    case let expectedNumber as Double:
+                                        let actualNumber = try #require(actualValue?.numberValue)
+                                        #expect(actualNumber == expectedNumber, "Check map #\(i + 1) has correct value for \"\(key)\" key")
+                                    case let expectedBool as Bool:
+                                        let actualBool = try #require(actualValue?.boolValue as Bool?)
+                                        #expect(actualBool == expectedBool, "Check map #\(i + 1) has correct value for \"\(key)\" key")
+                                    default:
+                                        Issue.record("Unexpected value type in test")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "Objects.createMap sends MAP_CREATE operation with reference to another LiveObject",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        let objects = ctx.objects
+                        
+                        let objectsCreatedPromiseUpdates1 = try root.updates()
+                        let objectsCreatedPromiseUpdates2 = try root.updates()
+                        async let objectsCreatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
+                            group.addTask {
+                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates1, "counter")
+                            }
+                            group.addTask {
+                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates2, "map")
+                            }
+                            while try await group.next() != nil {}
+                        }
+                        
+                        _ = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "counter",
+                            createOp: objectsHelper.counterCreateRestOp()
+                        )
+                        _ = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "map",
+                            createOp: objectsHelper.mapCreateRestOp()
+                        )
+                        _ = try await objectsCreatedPromise
+                        
+                        let counter = try #require(root.get(key: "counter")?.liveCounterValue)
+                        let map = try #require(root.get(key: "map")?.liveMapValue)
+                        
+                        let newMap = try await objects.createMap(entries: ["counter": .liveCounter(counter), "map": .liveMap(map)])
+                        
+                        // Note: newMap is guaranteed to exist by Swift type system
+                        // Note: Type check omitted - guaranteed by Swift type system that newMap is PublicLiveMap
+                        
+                        let newMapCounter = try #require(newMap.get(key: "counter")?.liveCounterValue)
+                        let newMapMap = try #require(newMap.get(key: "map")?.liveMapValue)
+                        
+                        #expect(newMapCounter === counter, "Check can set a reference to a LiveCounter object on a new map via a MAP_CREATE operation")
+                        #expect(newMapMap === map, "Check can set a reference to a LiveMap object on a new map via a MAP_CREATE operation")
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "LiveMap created with Objects.createMap can be assigned to the object tree",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objects = ctx.objects
+                        
+                        let mapCreatedPromiseUpdates = try root.updates()
+                        async let mapCreatedPromise: Void = waitForMapKeyUpdate(mapCreatedPromiseUpdates, "map")
+                        
+                        let counter = try await objects.createCounter()
+                        let map = try await objects.createMap(entries: ["foo": .primitive(.string("bar")), "baz": .liveCounter(counter)])
+                        try await root.set(key: "map", value: .liveMap(map))
+                        _ = await mapCreatedPromise
+                        
+                        // Note: Type check omitted - guaranteed by Swift type system that map is PublicLiveMap
+                        let rootMap = try #require(root.get(key: "map")?.liveMapValue)
+                        // Note: Type check omitted - guaranteed by Swift type system that rootMap is PublicLiveMap
+                        #expect(rootMap === map, "Check map object on root is the same as from create method")
+                        #expect(try rootMap.size == 2, "Check map assigned to the object tree has the expected number of keys")
+                        #expect(try #require(rootMap.get(key: "foo")?.stringValue) == "bar", "Check map assigned to the object tree has the expected value for its string key")
+                        
+                        let rootMapCounter = try #require(rootMap.get(key: "baz")?.liveCounterValue)
+                        #expect(rootMapCounter === counter, "Check map assigned to the object tree has the expected value for its LiveCounter key")
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "Objects.createMap can return LiveMap with initial value without applying CREATE operation",
+                    action: { ctx in
+                        let objects = ctx.objects
+                        
+                        // TODO: Implement test helper to prevent publishing of ops to realtime
+                        // This requires SDK to provide a test hook to replace Objects.publish method
+                        fatalError("TODO: Need SDK test hook to replace Objects.publish method to prevent publishing ops")
+                        
+                        // This test would verify that map gets initial value even when CREATE op is not published
+                        // let map = try await objects.createMap(initialData: ["foo": "bar"])
+                        // #expect(try #require(map.get(key: "foo")?.stringValue) == "bar", "Check map has expected initial value")
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "Objects.createMap can return LiveMap with initial value from applied CREATE operation",
+                    action: { ctx in
+                        let objects = ctx.objects
+                        let objectsHelper = ctx.objectsHelper
+                        let channel = ctx.channel
+                        
+                        // TODO: Implement test helper to replace Objects.publish method
+                        // This requires SDK to provide a test hook to replace Objects.publish method
+                        fatalError("TODO: Need SDK test hook to replace Objects.publish method to echo CREATE op with forged initial value")
+                        
+                        // This test would verify that map gets initialized with value from CREATE op instead of local value
+                        // Instead of sending CREATE op to realtime, echo it immediately to client with forged initial value
+                        // so we can check that map gets initialized with a value from a CREATE op
+                        //
+                        // let map = try await objects.createMap(initialData: ["foo": "bar"])
+                        // map should be created with forged initial value instead of the actual one
+                        // #expect(try map.get(key: "foo") == nil, "Check key \"foo\" was not set on a map client-side")
+                        // #expect(try #require(map.get(key: "baz")?.stringValue) == "qux", "Check key \"baz\" was set on a map from a CREATE operation after object creation")
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "initial value is not double counted for LiveMap from Objects.createMap when CREATE op is received",
+                    action: { ctx in
+                        let objects = ctx.objects
+                        let objectsHelper = ctx.objectsHelper
+                        let channel = ctx.channel
+                        
+                        // TODO: Implement test helper to prevent publishing of ops to realtime
+                        // This requires SDK to provide a test hook to replace Objects.publish method
+                        fatalError("TODO: Need SDK test hook to replace Objects.publish and get object ID to inject CREATE op")
+                        
+                        // This test would verify that initial value is not double counted when CREATE op is received
+                        // Prevent publishing of ops to realtime so we can guarantee order of operations
+                        // Create map locally, should have an initial value set
+                        // Then inject CREATE op for a map with a forged value. it should not be applied
+                        //
+                        // let map = try await objects.createMap(initialData: ["foo": "bar"])
+                        // let mapId = map.getObjectId() // Need SDK test hook for this
+                        // Now inject CREATE op for a map with a forged value. it should not be applied
+                        // await objectsHelper.processObjectOperationMessageOnChannel(...)
+                        // #expect(try #require(map.get(key: "foo")?.stringValue) == "bar", "Check key \"foo\" was not overridden by a CREATE operation after creating a map locally")
+                        // #expect(try map.get(key: "baz") == nil, "Check key \"baz\" was not set by a CREATE operation after creating a map locally")
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "Objects.createMap throws on invalid input",
+                    action: { ctx in
+                        let objects = ctx.objects
+                        
+                        // Test invalid input types - Swift type system prevents most invalid types
+                        // OMITTED from JS tests due to Swift type system: objects.createMap(null),
+                        // objects.createMap('foo'), objects.createMap(1), objects.createMap(BigInt(1)),
+                        // objects.createMap(true), objects.createMap(Symbol()) - all prevented by Swift's type system
+                        
+                        // Test invalid map value types - these would be caught at runtime
+                        // OMITTED from JS tests due to Swift type system: objects.createMap({ key: undefined }),
+                        // objects.createMap({ key: null }), objects.createMap({ key: BigInt(1) }),
+                        // objects.createMap({ key: Symbol() }), objects.createMap({ key: {} }),
+                        // objects.createMap({ key: [] }) - all prevented by Swift's type system requiring specific LiveMapValue types
+                        
+                        // Note: Swift's Objects.createMap(initialData:) method signature enforces [String: Any] initialData
+                        // and LiveMapValue enum cases at compile time, making most JS validation tests unnecessary.
+                        // Any invalid values would be caught during the conversion to LiveMapValue enum cases.
+                    }
+                ),
             ]
 
             let liveMapEnumerationScenarios: [TestScenario<Context>] = [
