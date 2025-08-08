@@ -1213,6 +1213,361 @@ private struct ObjectsIntegrationTests {
                         #expect(try root.get(key: "map") == nil, "Check map is not accessible on root after OBJECT_DELETE")
                         #expect(try root.get(key: "counter") == nil, "Check counter is not accessible on root after OBJECT_DELETE")
                     }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "can apply MAP_REMOVE object operation messages",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        let mapKey = "map"
+                        
+                        let mapCreatedPromiseUpdates = try root.updates()
+                        async let mapCreatedPromise: Void = waitForMapKeyUpdate(mapCreatedPromiseUpdates, mapKey)
+                        
+                        // Create new map and set on root
+                        let mapResult = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: mapKey,
+                            createOp: objectsHelper.mapCreateRestOp(data: [
+                                "shouldStay": .object(["string": .string("foo")]),
+                                "shouldDelete": .object(["string": .string("bar")])
+                            ])
+                        )
+                        _ = try await mapCreatedPromise
+                        
+                        let map = try #require(root.get(key: mapKey)?.liveMapValue)
+                        // Check map has expected keys before MAP_REMOVE ops
+                        #expect(try map.size == 2, "Check map at \"\(mapKey)\" key in root has correct number of keys before MAP_REMOVE")
+                        #expect(try #require(map.get(key: "shouldStay")?.stringValue) == "foo", "Check map at \"\(mapKey)\" key in root has correct \"shouldStay\" value before MAP_REMOVE")
+                        #expect(try #require(map.get(key: "shouldDelete")?.stringValue) == "bar", "Check map at \"\(mapKey)\" key in root has correct \"shouldDelete\" value before MAP_REMOVE")
+                        
+                        let keyRemovedPromiseUpdates = try map.updates()
+                        async let keyRemovedPromise: Void = waitForMapKeyUpdate(keyRemovedPromiseUpdates, "shouldDelete")
+                        
+                        // Send MAP_REMOVE op using the public API
+                        try await map.remove(key: "shouldDelete")
+                        _ = try await keyRemovedPromise
+                        
+                        // Check map has correct keys after MAP_REMOVE ops
+                        #expect(try map.size == 1, "Check map at \"\(mapKey)\" key in root has correct number of keys after MAP_REMOVE")
+                        #expect(try #require(map.get(key: "shouldStay")?.stringValue) == "foo", "Check map at \"\(mapKey)\" key in root has correct \"shouldStay\" value after MAP_REMOVE")
+                        #expect(try map.get(key: "shouldDelete") == nil, "Check map at \"\(mapKey)\" key in root has no \"shouldDelete\" key after MAP_REMOVE")
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "OBJECT_DELETE for unknown object id creates zero-value tombstoned object",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channel = ctx.channel
+                        
+                        let counterId = objectsHelper.fakeCounterObjectId()
+                        // Inject OBJECT_DELETE - should create a zero-value tombstoned object which can't be modified
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "aaa", timestamp: 0, counter: 0),
+                            siteCode: "aaa",
+                            state: [objectsHelper.objectDeleteOp(objectId: counterId)]
+                        )
+                        
+                        // Try to create and set tombstoned object on root
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0),
+                            siteCode: "bbb",
+                            state: [objectsHelper.counterCreateOp(objectId: counterId)]
+                        )
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "bbb", timestamp: 1, counter: 0),
+                            siteCode: "bbb",
+                            state: [objectsHelper.mapSetOp(objectId: "root", key: "counter", data: .object(["objectId": .string(counterId)]))]
+                        )
+                        
+                        #expect(try root.get(key: "counter") == nil, "Check counter is not accessible on root")
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "MAP_SET with reference to a tombstoned object results in undefined value on key",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        let channel = ctx.channel
+                        
+                        let objectCreatedPromiseUpdates = try root.updates()
+                        async let objectCreatedPromise: Void = waitForMapKeyUpdate(objectCreatedPromiseUpdates, "foo")
+                        
+                        // Create initial objects and set on root
+                        let counterResult = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "foo",
+                            createOp: objectsHelper.counterCreateRestOp()
+                        )
+                        _ = try await objectCreatedPromise
+                        
+                        #expect(try root.get(key: "foo") != nil, "Check counter exists on root before OBJECT_DELETE")
+                        
+                        // Inject OBJECT_DELETE
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "aaa", timestamp: 0, counter: 0),
+                            siteCode: "aaa",
+                            state: [objectsHelper.objectDeleteOp(objectId: counterResult.objectId)]
+                        )
+                        
+                        // Set tombstoned counter to another key on root
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "aaa", timestamp: 0, counter: 0),
+                            siteCode: "aaa",
+                            state: [objectsHelper.mapSetOp(objectId: "root", key: "bar", data: .object(["objectId": .string(counterResult.objectId)]))]
+                        )
+                        
+                        #expect(try root.get(key: "bar") == nil, "Check counter is not accessible on new key in root after OBJECT_DELETE")
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "object operation message on a tombstoned object does not revive it",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        let channel = ctx.channel
+                        
+                        let objectsCreatedPromiseUpdates1 = try root.updates()
+                        let objectsCreatedPromiseUpdates2 = try root.updates()
+                        let objectsCreatedPromiseUpdates3 = try root.updates()
+                        async let objectsCreatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
+                            group.addTask {
+                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates1, "map1")
+                            }
+                            group.addTask {
+                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates2, "map2")
+                            }
+                            group.addTask {
+                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates3, "counter1")
+                            }
+                            while try await group.next() != nil {}
+                        }
+                        
+                        // Create initial objects and set on root
+                        let mapResult1 = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "map1",
+                            createOp: objectsHelper.mapCreateRestOp()
+                        )
+                        let mapResult2 = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "map2",
+                            createOp: objectsHelper.mapCreateRestOp(data: ["foo": .object(["string": .string("bar")])])
+                        )
+                        let counterResult1 = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "counter1",
+                            createOp: objectsHelper.counterCreateRestOp()
+                        )
+                        _ = try await objectsCreatedPromise
+                        
+                        #expect(try root.get(key: "map1") != nil, "Check map1 exists on root before OBJECT_DELETE")
+                        #expect(try root.get(key: "map2") != nil, "Check map2 exists on root before OBJECT_DELETE")
+                        #expect(try root.get(key: "counter1") != nil, "Check counter1 exists on root before OBJECT_DELETE")
+                        
+                        // Inject OBJECT_DELETE operations
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "aaa", timestamp: 0, counter: 0),
+                            siteCode: "aaa",
+                            state: [objectsHelper.objectDeleteOp(objectId: mapResult1.objectId)]
+                        )
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "aaa", timestamp: 1, counter: 0),
+                            siteCode: "aaa",
+                            state: [objectsHelper.objectDeleteOp(objectId: mapResult2.objectId)]
+                        )
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "aaa", timestamp: 2, counter: 0),
+                            siteCode: "aaa",
+                            state: [objectsHelper.objectDeleteOp(objectId: counterResult1.objectId)]
+                        )
+                        
+                        // Inject object operations on tombstoned objects
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "aaa", timestamp: 3, counter: 0),
+                            siteCode: "aaa",
+                            state: [objectsHelper.mapSetOp(objectId: mapResult1.objectId, key: "baz", data: .object(["string": .string("qux")]))]
+                        )
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "aaa", timestamp: 4, counter: 0),
+                            siteCode: "aaa",
+                            state: [objectsHelper.mapRemoveOp(objectId: mapResult2.objectId, key: "foo")]
+                        )
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "aaa", timestamp: 5, counter: 0),
+                            siteCode: "aaa",
+                            state: [objectsHelper.counterIncOp(objectId: counterResult1.objectId, amount: 1)]
+                        )
+                        
+                        // Objects should still be deleted
+                        #expect(try root.get(key: "map1") == nil, "Check map1 does not exist on root after OBJECT_DELETE and another object op")
+                        #expect(try root.get(key: "map2") == nil, "Check map2 does not exist on root after OBJECT_DELETE and another object op")
+                        #expect(try root.get(key: "counter1") == nil, "Check counter1 does not exist on root after OBJECT_DELETE and another object op")
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "MAP_SET object operation messages are applied based on the site timeserials vector of the object",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channel = ctx.channel
+                        
+                        // Create new map and set it on a root with forged timeserials
+                        let mapId = objectsHelper.fakeMapObjectId()
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "bbb", timestamp: 1, counter: 0),
+                            siteCode: "bbb",
+                            state: [objectsHelper.mapCreateOp(
+                                objectId: mapId,
+                                entries: [
+                                    "foo1": .object([
+                                        "timeserial": .string(lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0)),
+                                        "data": .object(["string": .string("bar")])
+                                    ]),
+                                    "foo2": .object([
+                                        "timeserial": .string(lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0)),
+                                        "data": .object(["string": .string("bar")])
+                                    ]),
+                                    "foo3": .object([
+                                        "timeserial": .string(lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0)),
+                                        "data": .object(["string": .string("bar")])
+                                    ]),
+                                    "foo4": .object([
+                                        "timeserial": .string(lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0)),
+                                        "data": .object(["string": .string("bar")])
+                                    ]),
+                                    "foo5": .object([
+                                        "timeserial": .string(lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0)),
+                                        "data": .object(["string": .string("bar")])
+                                    ]),
+                                    "foo6": .object([
+                                        "timeserial": .string(lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0)),
+                                        "data": .object(["string": .string("bar")])
+                                    ])
+                                ]
+                            )]
+                        )
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "aaa", timestamp: 0, counter: 0),
+                            siteCode: "aaa",
+                            state: [objectsHelper.mapSetOp(objectId: "root", key: "map", data: .object(["objectId": .string(mapId)]))]
+                        )
+                        
+                        // Inject operations with various timeserial values
+                        let timeserialTestCases = [
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0), siteCode: "bbb"), // existing site, earlier site CGO, not applied
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 1, counter: 0), siteCode: "bbb"), // existing site, same site CGO, not applied
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 2, counter: 0), siteCode: "bbb"), // existing site, later site CGO, applied, site timeserials updated
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 2, counter: 0), siteCode: "bbb"), // existing site, same site CGO (updated from last op), not applied
+                            (serial: lexicoTimeserial(seriesId: "aaa", timestamp: 0, counter: 0), siteCode: "aaa"), // different site, earlier entry CGO, not applied
+                            (serial: lexicoTimeserial(seriesId: "ccc", timestamp: 9, counter: 0), siteCode: "ccc")  // different site, later entry CGO, applied
+                        ]
+                        
+                        for (i, testCase) in timeserialTestCases.enumerated() {
+                            try await objectsHelper.processObjectOperationMessageOnChannel(
+                                channel: channel,
+                                serial: testCase.serial,
+                                siteCode: testCase.siteCode,
+                                state: [objectsHelper.mapSetOp(objectId: mapId, key: "foo\(i + 1)", data: .object(["string": .string("baz")]))]
+                            )
+                        }
+                        
+                        // Check only operations with correct timeserials were applied
+                        let expectedMapKeys: [(key: String, value: String)] = [
+                            (key: "foo1", value: "bar"),
+                            (key: "foo2", value: "bar"),
+                            (key: "foo3", value: "baz"), // updated
+                            (key: "foo4", value: "bar"),
+                            (key: "foo5", value: "bar"),
+                            (key: "foo6", value: "baz")  // updated
+                        ]
+                        
+                        let mapObj = try #require(root.get(key: "map")?.liveMapValue)
+                        for expectedMapKey in expectedMapKeys {
+                            #expect(try #require(mapObj.get(key: expectedMapKey.key)?.stringValue) == expectedMapKey.value, "Check \"\(expectedMapKey.key)\" key on map has expected value after MAP_SET ops")
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "COUNTER_INC object operation messages are applied based on the site timeserials vector of the object",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channel = ctx.channel
+                        
+                        // Create new counter and set it on a root with forged timeserials
+                        let counterId = objectsHelper.fakeCounterObjectId()
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "bbb", timestamp: 1, counter: 0),
+                            siteCode: "bbb",
+                            state: [objectsHelper.counterCreateOp(objectId: counterId, count: 1)]
+                        )
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "aaa", timestamp: 0, counter: 0),
+                            siteCode: "aaa",
+                            state: [objectsHelper.mapSetOp(objectId: "root", key: "counter", data: .object(["objectId": .string(counterId)]))]
+                        )
+                        
+                        // Inject operations with various timeserial values
+                        let timeserialTestCases = [
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0), siteCode: "bbb", amount: 10),       // existing site, earlier CGO, not applied
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 1, counter: 0), siteCode: "bbb", amount: 100),      // existing site, same CGO, not applied
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 2, counter: 0), siteCode: "bbb", amount: 1000),     // existing site, later CGO, applied, site timeserials updated
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 2, counter: 0), siteCode: "bbb", amount: 10000),    // existing site, same CGO (updated from last op), not applied
+                            (serial: lexicoTimeserial(seriesId: "aaa", timestamp: 0, counter: 0), siteCode: "aaa", amount: 100000),   // different site, earlier CGO, applied
+                            (serial: lexicoTimeserial(seriesId: "ccc", timestamp: 9, counter: 0), siteCode: "ccc", amount: 1000000)  // different site, later CGO, applied
+                        ]
+                        
+                        for testCase in timeserialTestCases {
+                            try await objectsHelper.processObjectOperationMessageOnChannel(
+                                channel: channel,
+                                serial: testCase.serial,
+                                siteCode: testCase.siteCode,
+                                state: [objectsHelper.counterIncOp(objectId: counterId, amount: testCase.amount)]
+                            )
+                        }
+                        
+                        // Check only operations with correct timeserials were applied
+                        let counter = try #require(root.get(key: "counter")?.liveCounterValue)
+                        let expectedValue = 1.0 + 1000.0 + 100000.0 + 1000000.0 // sum of passing operations and the initial value
+                        #expect(try counter.value == expectedValue, "Check counter has expected value after COUNTER_INC ops")
+                    }
                 )
             ]
 
