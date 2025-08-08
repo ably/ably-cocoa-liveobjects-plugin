@@ -1568,6 +1568,308 @@ private struct ObjectsIntegrationTests {
                         let expectedValue = 1.0 + 1000.0 + 100000.0 + 1000000.0 // sum of passing operations and the initial value
                         #expect(try counter.value == expectedValue, "Check counter has expected value after COUNTER_INC ops")
                     }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "MAP_REMOVE object operation messages are applied based on the site timeserials vector of the object",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channel = ctx.channel
+                        
+                        // Create new map and set it on a root with forged timeserials
+                        let mapId = objectsHelper.fakeMapObjectId()
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "bbb", timestamp: 1, counter: 0),
+                            siteCode: "bbb",
+                            state: [objectsHelper.mapCreateOp(
+                                objectId: mapId,
+                                entries: [
+                                    "foo1": .object([
+                                        "timeserial": .string(lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0)),
+                                        "data": .object(["string": .string("bar")])
+                                    ]),
+                                    "foo2": .object([
+                                        "timeserial": .string(lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0)),
+                                        "data": .object(["string": .string("bar")])
+                                    ]),
+                                    "foo3": .object([
+                                        "timeserial": .string(lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0)),
+                                        "data": .object(["string": .string("bar")])
+                                    ]),
+                                    "foo4": .object([
+                                        "timeserial": .string(lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0)),
+                                        "data": .object(["string": .string("bar")])
+                                    ]),
+                                    "foo5": .object([
+                                        "timeserial": .string(lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0)),
+                                        "data": .object(["string": .string("bar")])
+                                    ]),
+                                    "foo6": .object([
+                                        "timeserial": .string(lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0)),
+                                        "data": .object(["string": .string("bar")])
+                                    ])
+                                ]
+                            )]
+                        )
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "aaa", timestamp: 0, counter: 0),
+                            siteCode: "aaa",
+                            state: [objectsHelper.mapSetOp(objectId: "root", key: "map", data: .object(["objectId": .string(mapId)]))]
+                        )
+                        
+                        // Inject operations with various timeserial values
+                        let timeserialTestCases = [
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0), siteCode: "bbb"), // existing site, earlier site CGO, not applied
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 1, counter: 0), siteCode: "bbb"), // existing site, same site CGO, not applied
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 2, counter: 0), siteCode: "bbb"), // existing site, later site CGO, applied, site timeserials updated
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 2, counter: 0), siteCode: "bbb"), // existing site, same site CGO (updated from last op), not applied
+                            (serial: lexicoTimeserial(seriesId: "aaa", timestamp: 0, counter: 0), siteCode: "aaa"), // different site, earlier entry CGO, not applied
+                            (serial: lexicoTimeserial(seriesId: "ccc", timestamp: 9, counter: 0), siteCode: "ccc")  // different site, later entry CGO, applied
+                        ]
+                        
+                        for (i, testCase) in timeserialTestCases.enumerated() {
+                            try await objectsHelper.processObjectOperationMessageOnChannel(
+                                channel: channel,
+                                serial: testCase.serial,
+                                siteCode: testCase.siteCode,
+                                state: [objectsHelper.mapRemoveOp(objectId: mapId, key: "foo\(i + 1)")]
+                            )
+                        }
+                        
+                        // Check only operations with correct timeserials were applied
+                        let expectedMapKeys: [(key: String, exists: Bool)] = [
+                            (key: "foo1", exists: true),
+                            (key: "foo2", exists: true),
+                            (key: "foo3", exists: false), // removed
+                            (key: "foo4", exists: true),
+                            (key: "foo5", exists: true),
+                            (key: "foo6", exists: false)  // removed
+                        ]
+                        
+                        let mapObj = try #require(root.get(key: "map")?.liveMapValue)
+                        for expectedMapKey in expectedMapKeys {
+                            if expectedMapKey.exists {
+                                #expect(try mapObj.get(key: expectedMapKey.key) != nil, "Check \"\(expectedMapKey.key)\" key on map still exists after MAP_REMOVE ops")
+                            } else {
+                                #expect(try mapObj.get(key: expectedMapKey.key) == nil, "Check \"\(expectedMapKey.key)\" key on map does not exist after MAP_REMOVE ops")
+                            }
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "COUNTER_CREATE object operation messages are applied based on the site timeserials vector of the object",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channel = ctx.channel
+                        
+                        // Need to use multiple counters as COUNTER_CREATE op can only be applied once to a counter object
+                        let counterIds = [
+                            objectsHelper.fakeCounterObjectId(),
+                            objectsHelper.fakeCounterObjectId(),
+                            objectsHelper.fakeCounterObjectId(),
+                            objectsHelper.fakeCounterObjectId(),
+                            objectsHelper.fakeCounterObjectId()
+                        ]
+                        
+                        // Send COUNTER_INC ops first to create zero-value counters with forged site timeserials vector
+                        for (i, counterId) in counterIds.enumerated() {
+                            try await objectsHelper.processObjectOperationMessageOnChannel(
+                                channel: channel,
+                                serial: lexicoTimeserial(seriesId: "bbb", timestamp: 1, counter: 0),
+                                siteCode: "bbb",
+                                state: [objectsHelper.counterIncOp(objectId: counterId, amount: 1)]
+                            )
+                            try await objectsHelper.processObjectOperationMessageOnChannel(
+                                channel: channel,
+                                serial: lexicoTimeserial(seriesId: "aaa", timestamp: Int64(i), counter: 0),
+                                siteCode: "aaa",
+                                state: [objectsHelper.mapSetOp(objectId: "root", key: counterId, data: .object(["objectId": .string(counterId)]))]
+                            )
+                        }
+                        
+                        // Inject operations with various timeserial values
+                        let timeserialTestCases = [
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0), siteCode: "bbb"), // existing site, earlier CGO, not applied
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 1, counter: 0), siteCode: "bbb"), // existing site, same CGO, not applied
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 2, counter: 0), siteCode: "bbb"), // existing site, later CGO, applied
+                            (serial: lexicoTimeserial(seriesId: "aaa", timestamp: 0, counter: 0), siteCode: "aaa"), // different site, earlier CGO, applied
+                            (serial: lexicoTimeserial(seriesId: "ccc", timestamp: 9, counter: 0), siteCode: "ccc")  // different site, later CGO, applied
+                        ]
+                        
+                        for (i, testCase) in timeserialTestCases.enumerated() {
+                            try await objectsHelper.processObjectOperationMessageOnChannel(
+                                channel: channel,
+                                serial: testCase.serial,
+                                siteCode: testCase.siteCode,
+                                state: [objectsHelper.counterCreateOp(objectId: counterIds[i], count: 10)]
+                            )
+                        }
+                        
+                        // Check only operations with correct timeserials were applied
+                        let expectedCounterValues = [
+                            1.0,
+                            1.0,
+                            11.0, // applied COUNTER_CREATE
+                            11.0, // applied COUNTER_CREATE
+                            11.0  // applied COUNTER_CREATE
+                        ]
+                        
+                        for (i, counterId) in counterIds.enumerated() {
+                            let expectedValue = expectedCounterValues[i]
+                            let counter = try #require(root.get(key: counterId)?.liveCounterValue)
+                            #expect(try counter.value == expectedValue, "Check counter #\(i + 1) has expected value after COUNTER_CREATE ops")
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "OBJECT_DELETE object operation messages are applied based on the site timeserials vector of the object",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channel = ctx.channel
+                        
+                        // Need to use multiple objects as OBJECT_DELETE op can only be applied once to an object
+                        let counterIds = [
+                            objectsHelper.fakeCounterObjectId(),
+                            objectsHelper.fakeCounterObjectId(),
+                            objectsHelper.fakeCounterObjectId(),
+                            objectsHelper.fakeCounterObjectId(),
+                            objectsHelper.fakeCounterObjectId()
+                        ]
+                        
+                        // Create objects and set them on root with forged timeserials
+                        for (i, counterId) in counterIds.enumerated() {
+                            try await objectsHelper.processObjectOperationMessageOnChannel(
+                                channel: channel,
+                                serial: lexicoTimeserial(seriesId: "bbb", timestamp: 1, counter: 0),
+                                siteCode: "bbb",
+                                state: [objectsHelper.counterCreateOp(objectId: counterId)]
+                            )
+                            try await objectsHelper.processObjectOperationMessageOnChannel(
+                                channel: channel,
+                                serial: lexicoTimeserial(seriesId: "aaa", timestamp: Int64(i), counter: 0),
+                                siteCode: "aaa",
+                                state: [objectsHelper.mapSetOp(objectId: "root", key: counterId, data: .object(["objectId": .string(counterId)]))]
+                            )
+                        }
+                        
+                        // Inject OBJECT_DELETE operations with various timeserial values
+                        let timeserialTestCases = [
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0), siteCode: "bbb"), // existing site, earlier CGO, not applied
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 1, counter: 0), siteCode: "bbb"), // existing site, same CGO, not applied
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 2, counter: 0), siteCode: "bbb"), // existing site, later CGO, applied
+                            (serial: lexicoTimeserial(seriesId: "aaa", timestamp: 0, counter: 0), siteCode: "aaa"), // different site, earlier CGO, applied
+                            (serial: lexicoTimeserial(seriesId: "ccc", timestamp: 9, counter: 0), siteCode: "ccc")  // different site, later CGO, applied
+                        ]
+                        
+                        for (i, testCase) in timeserialTestCases.enumerated() {
+                            try await objectsHelper.processObjectOperationMessageOnChannel(
+                                channel: channel,
+                                serial: testCase.serial,
+                                siteCode: testCase.siteCode,
+                                state: [objectsHelper.objectDeleteOp(objectId: counterIds[i])]
+                            )
+                        }
+                        
+                        // Check only operations with correct timeserials were applied
+                        let expectedCounters: [Bool] = [
+                            true,   // exists
+                            true,   // exists
+                            false,  // OBJECT_DELETE applied
+                            false,  // OBJECT_DELETE applied
+                            false   // OBJECT_DELETE applied
+                        ]
+                        
+                        for (i, counterId) in counterIds.enumerated() {
+                            let exists = expectedCounters[i]
+                            
+                            if exists {
+                                #expect(try root.get(key: counterId) != nil, "Check counter #\(i + 1) exists on root as OBJECT_DELETE op was not applied")
+                            } else {
+                                #expect(try root.get(key: counterId) == nil, "Check counter #\(i + 1) does not exist on root as OBJECT_DELETE op was applied")
+                            }
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "OBJECT_DELETE triggers subscription callback with deleted data",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        let channel = ctx.channel
+                        
+                        let objectsCreatedPromiseUpdates1 = try root.updates()
+                        let objectsCreatedPromiseUpdates2 = try root.updates()
+                        async let objectsCreatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
+                            group.addTask {
+                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates1, "map")
+                            }
+                            group.addTask {
+                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates2, "counter")
+                            }
+                            while try await group.next() != nil {}
+                        }
+                        
+                        // Create initial objects and set on root
+                        let mapResult = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "map",
+                            createOp: objectsHelper.mapCreateRestOp(data: [
+                                "foo": .object(["string": .string("bar")]),
+                                "baz": .object(["number": .number(1)])
+                            ])
+                        )
+                        let counterResult = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "counter",
+                            createOp: objectsHelper.counterCreateRestOp(number: 1)
+                        )
+                        _ = try await objectsCreatedPromise
+                        
+                        let mapSubPromiseUpdates = try #require(root.get(key: "map")?.liveMapValue).updates()
+                        let counterSubPromiseUpdates = try #require(root.get(key: "counter")?.liveCounterValue).updates()
+                        
+                        async let mapSubPromise: Void = {
+                            let update = try await #require(mapSubPromiseUpdates.first { _ in true })
+                            #expect(update.update["foo"] == .removed, "Check map subscription callback is called with an expected update object after OBJECT_DELETE operation for 'foo' key")
+                            #expect(update.update["baz"] == .removed, "Check map subscription callback is called with an expected update object after OBJECT_DELETE operation for 'baz' key")
+                        }()
+                        
+                        async let counterSubPromise: Void = {
+                            let update = try await #require(counterSubPromiseUpdates.first { _ in true })
+                            #expect(update.amount == -1, "Check counter subscription callback is called with an expected update object after OBJECT_DELETE operation")
+                        }()
+                        
+                        // Inject OBJECT_DELETE
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "aaa", timestamp: 0, counter: 0),
+                            siteCode: "aaa",
+                            state: [objectsHelper.objectDeleteOp(objectId: mapResult.objectId)]
+                        )
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "aaa", timestamp: 1, counter: 0),
+                            siteCode: "aaa",
+                            state: [objectsHelper.objectDeleteOp(objectId: counterResult.objectId)]
+                        )
+                        
+                        _ = try await (mapSubPromise, counterSubPromise)
+                    }
                 )
             ]
 
