@@ -12,7 +12,7 @@ I have already:
 
 You can see all of this in @ObjectsIntegrationTests.swift.
 
-Your task is to port the subscriptionCallbacksScenarios to Swift. Begin by creating a TODO list for the remaining tests, then work on this TODO list.
+Your task is to port the subscriptionCallbacksScenarios to Swift. Begin by creating a TODO list for the remaining tests, then work on this TODO list. Port a single test at a time so that I can assess the output; I think that we might run into Swift concurrency issues and want to get an early idea of the kinds of issues we might encounter.
 
 ## Requirements specific to these ported tests
 
