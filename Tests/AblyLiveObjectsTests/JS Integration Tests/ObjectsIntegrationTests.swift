@@ -3101,6 +3101,120 @@ private struct ObjectsIntegrationTests {
                 }
             ),
             // Have not implemented "can unsubscribe from LiveCounter updates via LiveCounter.unsubscribe() call" because this method doesn't exist in the Swift SDK (functions don't have identity)
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: false,
+                description: "can remove all LiveCounter update listeners via LiveCounter.unsubscribeAll() call",
+                action: { ctx in
+                    // JS: const counter = root.get(sampleCounterKey);
+                    let counter = try #require(ctx.root.get(key: ctx.sampleCounterKey)?.liveCounterValue)
+                    // JS: const callbacks = 3;
+                    let callbacks = 3
+                    
+                    // JS: const callbacksCalled = new Array(callbacks).fill(0);
+                    actor CallbackTracker {
+                        private var callbacksCalled: [Int]
+                        private var completedCallbacks = 0
+                        
+                        init(count: Int) {
+                            callbacksCalled = Array(repeating: 0, count: count)
+                        }
+                        
+                        /// Increments the callback count for the subscription at the given index.
+                        /// 
+                        /// This tracks how many times each individual subscription callback has been called,
+                        /// and also keeps a total count of all callback invocations across all subscriptions.
+                        ///
+                        /// - Parameter index: The index of the subscription (0, 1, or 2 in this test)
+                        /// - Returns: `true` if all subscriptions have been called at least once (i.e., we've 
+                        ///           received the first batch of callbacks from all 3 subscriptions), `false` otherwise.
+                        ///           This is used to signal when the subscription promise should complete.
+                        func increment(at index: Int) -> Bool {
+                            callbacksCalled[index] += 1
+                            completedCallbacks += 1
+                            return completedCallbacks >= callbacksCalled.count
+                        }
+                        
+                        func getCounts() -> [Int] {
+                            return callbacksCalled
+                        }
+                    }
+                    
+                    let tracker = CallbackTracker(count: callbacks)
+                    
+                    // JS: const subscriptionPromises = [];
+                    // JS: for (let i = 0; i < callbacks; i++) {
+                    // JS:   const promise = new Promise((resolve) => {
+                    // JS:     counter.subscribe(() => {
+                    // JS:       callbacksCalled[i]++;
+                    // JS:       resolve();
+                    // JS:     });
+                    // JS:   });
+                    // JS:   subscriptionPromises.push(promise);
+                    // JS: }
+                    async let subscriptionPromise: Void = withCheckedThrowingContinuation { continuation in
+                        // Create multiple subscriptions
+                        for i in 0..<callbacks {
+                            do {
+                                try counter.subscribe { _, _ in
+                                    Task {
+                                        let allCompleted = await tracker.increment(at: i)
+                                        if allCompleted {
+                                            continuation.resume()
+                                        }
+                                    }
+                                }
+                            } catch {
+                                continuation.resume(throwing: error)
+                            }
+                        }
+                    }
+                    
+                    // JS: const increments = 3;
+                    // JS: for (let i = 0; i < increments; i++) {
+                    // JS:   const counterUpdatedPromise = waitForCounterUpdate(counter);
+                    // JS:   await objectsHelper.operationRequest(
+                    // JS:     channelName,
+                    // JS:     objectsHelper.counterIncRestOp({
+                    // JS:       objectId: sampleCounterObjectId,
+                    // JS:       number: 1,
+                    // JS:     }),
+                    // JS:   );
+                    // JS:   await counterUpdatedPromise;
+                    // JS:   
+                    // JS:   if (i === 0) {
+                    // JS:     // unsub all after first operation
+                    // JS:     counter.unsubscribeAll();
+                    // JS:   }
+                    // JS: }
+                    let increments = 3
+                    for i in 0..<increments {
+                        let counterUpdatesStream = try counter.updates()
+                        async let counterUpdatedPromise: Void = waitForCounterUpdate(counterUpdatesStream)
+                        _ = try await ctx.objectsHelper.operationRequest(
+                            channelName: ctx.channelName,
+                            opBody: ctx.objectsHelper.counterIncRestOp(objectId: ctx.sampleCounterObjectId, number: 1)
+                        )
+                        await counterUpdatedPromise
+                        
+                        if i == 0 {
+                            // unsubscribe all after first operation
+                            counter.unsubscribeAll()
+                        }
+                    }
+                    
+                    // JS: await Promise.all(subscriptionPromises);
+                    try await subscriptionPromise
+                    
+                    // JS: expect(counter.value()).to.equal(3, 'Check counter has final expected value after all increments');
+                    #expect(try counter.value == 3, "Check counter has final expected value after all increments")
+                    // JS: callbacksCalled.forEach((x) => expect(x).to.equal(1, 'Check subscription callbacks were called once each'));
+                    let callbackCounts = await tracker.getCounts()
+                    for count in callbackCounts {
+                        #expect(count == 1, "Check subscription callbacks were called once each")
+                    }
+                }
+            ),
         ]
     }
     

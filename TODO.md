@@ -1,2 +1,3 @@
 - [ ] it has missed out some of the primitiveKeyData (e.g. max integer)
 - [ ] the primitiveKeyData need DRYing up
+- [ ] some of the code that checks unsubscribe might be a bit racy — e.g. it might just be that you didn't see an update yet because you dispatched its handling into a `Task`
