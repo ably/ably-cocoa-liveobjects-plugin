@@ -676,7 +676,544 @@ private struct ObjectsIntegrationTests {
             ]
 
             let applyOperationsScenarios: [TestScenario<Context>] = [
-                // TODO: Implement these scenarios
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "can apply MAP_CREATE with primitives object operation messages",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        
+                        // Define primitive maps fixtures similar to JS test
+                        let primitiveMapsFixtures: [(name: String, entries: [String: [String: JSONValue]]?, restData: [String: JSONValue]?)] = [
+                            (name: "emptyMap", entries: nil, restData: nil),
+                            (name: "valuesMap", entries: [
+                                "stringKey": ["data": .object(["string": .string("stringValue")])],
+                                "emptyStringKey": ["data": .object(["string": .string("")])],
+                                "bytesKey": ["data": .object(["bytes": .string("eyJwcm9kdWN0SWQiOiAiMDAxIiwgInByb2R1Y3ROYW1lIjogImNhciJ9")])],
+                                "emptyBytesKey": ["data": .object(["bytes": .string("")])],
+                                "numberKey": ["data": .object(["number": .number(1)])],
+                                "zeroKey": ["data": .object(["number": .number(0)])],
+                                "trueKey": ["data": .object(["boolean": .bool(true)])],
+                                "falseKey": ["data": .object(["boolean": .bool(false)])]
+                            ], restData: [
+                                "stringKey": .object(["string": .string("stringValue")]),
+                                "emptyStringKey": .object(["string": .string("")]),
+                                "bytesKey": .object(["bytes": .string("eyJwcm9kdWN0SWQiOiAiMDAxIiwgInByb2R1Y3ROYW1lIjogImNhciJ9")]),
+                                "emptyBytesKey": .object(["bytes": .string("")]),
+                                "numberKey": .object(["number": .number(1)]),
+                                "zeroKey": .object(["number": .number(0)]),
+                                "trueKey": .object(["boolean": .bool(true)]),
+                                "falseKey": .object(["boolean": .bool(false)])
+                            ])
+                        ]
+                        
+                        // Check no maps exist on root
+                        for fixture in primitiveMapsFixtures {
+                            let key = fixture.name
+                            #expect(try root.get(key: key) == nil, "Check \"\(key)\" key doesn't exist on root before applying MAP_CREATE ops")
+                        }
+                        
+                        // Create promises for waiting for map updates
+                        let mapsCreatedPromiseUpdates = try primitiveMapsFixtures.map { _ in try root.updates() }
+                        async let mapsCreatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
+                            for (i, fixture) in primitiveMapsFixtures.enumerated() {
+                                group.addTask {
+                                    await waitForMapKeyUpdate(mapsCreatedPromiseUpdates[i], fixture.name)
+                                }
+                            }
+                            while try await group.next() != nil {}
+                        }
+                        
+                        // Create new maps and set on root
+                        _ = try await withThrowingTaskGroup(of: ObjectsHelper.OperationResult.self) { group in
+                            for fixture in primitiveMapsFixtures {
+                                group.addTask {
+                                    try await objectsHelper.createAndSetOnMap(
+                                        channelName: channelName,
+                                        mapObjectId: "root",
+                                        key: fixture.name,
+                                        createOp: objectsHelper.mapCreateRestOp(data: fixture.restData)
+                                    )
+                                }
+                            }
+                            var results: [ObjectsHelper.OperationResult] = []
+                            while let result = try await group.next() {
+                                results.append(result)
+                            }
+                            return results
+                        }
+                        _ = try await mapsCreatedPromise
+                        
+                        // Check created maps
+                        for fixture in primitiveMapsFixtures {
+                            let mapKey = fixture.name
+                            let mapObj = try #require(root.get(key: mapKey)?.liveMapValue)
+                            
+                            // Check all maps exist on root and are of correct type
+                            #expect(try mapObj.size == (fixture.entries?.count ?? 0), "Check map \"\(mapKey)\" has correct number of keys")
+                            
+                            if let entries = fixture.entries {
+                                for (key, keyData) in entries {
+                                    let data = keyData["data"]!.objectValue!
+                                    
+                                    if let bytesString = data["bytes"]?.stringValue {
+                                        let expectedData = Data(base64Encoded: bytesString)
+                                        #expect(try mapObj.get(key: key)?.dataValue == expectedData, "Check map \"\(mapKey)\" has correct value for \"\(key)\" key")
+                                    } else if let numberValue = data["number"]?.numberValue {
+                                        #expect(try mapObj.get(key: key)?.numberValue == Double(numberValue), "Check map \"\(mapKey)\" has correct value for \"\(key)\" key")
+                                    } else if let stringValue = data["string"]?.stringValue {
+                                        #expect(try mapObj.get(key: key)?.stringValue == stringValue, "Check map \"\(mapKey)\" has correct value for \"\(key)\" key")
+                                    } else if let boolValue = data["boolean"]?.boolValue {
+                                        #expect(try mapObj.get(key: key)?.boolValue == boolValue, "Check map \"\(mapKey)\" has correct value for \"\(key)\" key")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "can apply MAP_CREATE with object ids object operation messages",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        let withReferencesMapKey = "withReferencesMap"
+                        
+                        // Check map does not exist on root
+                        #expect(try root.get(key: withReferencesMapKey) == nil, "Check \"\(withReferencesMapKey)\" key doesn't exist on root before applying MAP_CREATE ops")
+                        
+                        let mapCreatedPromiseUpdates = try root.updates()
+                        async let mapCreatedPromise: Void = waitForMapKeyUpdate(mapCreatedPromiseUpdates, withReferencesMapKey)
+                        
+                        // Create map with references - need to create referenced objects first to obtain their object ids
+                        // We'll create them separately first, then reference them
+                        let tempMapUpdates = try root.updates()
+                        let tempCounterUpdates = try root.updates()
+                        async let tempObjectsPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
+                            group.addTask {
+                                await waitForMapKeyUpdate(tempMapUpdates, "tempMap")
+                            }
+                            group.addTask {
+                                await waitForMapKeyUpdate(tempCounterUpdates, "tempCounter")
+                            }
+                            while try await group.next() != nil {}
+                        }
+                        
+                        let referencedMapResult = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "tempMap",
+                            createOp: objectsHelper.mapCreateRestOp(data: ["stringKey": .object(["string": .string("stringValue")])])
+                        )
+                        let referencedCounterResult = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "tempCounter",
+                            createOp: objectsHelper.counterCreateRestOp(number: 1)
+                        )
+                        _ = try await tempObjectsPromise
+                        
+                        _ = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: withReferencesMapKey,
+                            createOp: objectsHelper.mapCreateRestOp(data: [
+                                "mapReference": .object(["objectId": .string(referencedMapResult.objectId)]),
+                                "counterReference": .object(["objectId": .string(referencedCounterResult.objectId)])
+                            ])
+                        )
+                        _ = try await mapCreatedPromise
+                        
+                        // Check map with references exist on root
+                        let withReferencesMap = try #require(root.get(key: withReferencesMapKey)?.liveMapValue)
+                        #expect(try withReferencesMap.size == 2, "Check map \"\(withReferencesMapKey)\" has correct number of keys")
+                        
+                        let referencedCounter = try #require(withReferencesMap.get(key: "counterReference")?.liveCounterValue)
+                        #expect(try referencedCounter.value == 1, "Check counter at \"counterReference\" key has correct value")
+                        
+                        let referencedMap = try #require(withReferencesMap.get(key: "mapReference")?.liveMapValue)
+                        #expect(try referencedMap.size == 1, "Check map at \"mapReference\" key has correct number of keys")
+                        #expect(try #require(referencedMap.get(key: "stringKey")?.stringValue) == "stringValue", "Check map at \"mapReference\" key has correct \"stringKey\" value")
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "MAP_CREATE object operation messages are applied based on the site timeserials vector of the object",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channel = ctx.channel
+                        
+                        // Need to use multiple maps as MAP_CREATE op can only be applied once to a map object
+                        let mapIds = [
+                            objectsHelper.fakeMapObjectId(),
+                            objectsHelper.fakeMapObjectId(),
+                            objectsHelper.fakeMapObjectId(),
+                            objectsHelper.fakeMapObjectId(),
+                            objectsHelper.fakeMapObjectId()
+                        ]
+                        
+                        // Send MAP_SET ops first to create zero-value maps with forged site timeserials vector
+                        for (i, mapId) in mapIds.enumerated() {
+                            try await objectsHelper.processObjectOperationMessageOnChannel(
+                                channel: channel,
+                                serial: lexicoTimeserial(seriesId: "bbb", timestamp: 1, counter: 0),
+                                siteCode: "bbb",
+                                state: [objectsHelper.mapSetOp(objectId: mapId, key: "foo", data: .object(["string": .string("bar")]))]
+                            )
+                            try await objectsHelper.processObjectOperationMessageOnChannel(
+                                channel: channel,
+                                serial: lexicoTimeserial(seriesId: "aaa", timestamp: Int64(i), counter: 0),
+                                siteCode: "aaa",
+                                state: [objectsHelper.mapSetOp(objectId: "root", key: mapId, data: .object(["objectId": .string(mapId)]))]
+                            )
+                        }
+                        
+                        // Inject operations with various timeserial values
+                        let timeserialTestCases = [
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 0, counter: 0), siteCode: "bbb"), // existing site, earlier CGO, not applied
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 1, counter: 0), siteCode: "bbb"), // existing site, same CGO, not applied
+                            (serial: lexicoTimeserial(seriesId: "bbb", timestamp: 2, counter: 0), siteCode: "bbb"), // existing site, later CGO, applied
+                            (serial: lexicoTimeserial(seriesId: "aaa", timestamp: 0, counter: 0), siteCode: "aaa"), // different site, earlier CGO, applied
+                            (serial: lexicoTimeserial(seriesId: "ccc", timestamp: 9, counter: 0), siteCode: "ccc")  // different site, later CGO, applied
+                        ]
+                        
+                        for (i, testCase) in timeserialTestCases.enumerated() {
+                            try await objectsHelper.processObjectOperationMessageOnChannel(
+                                channel: channel,
+                                serial: testCase.serial,
+                                siteCode: testCase.siteCode,
+                                state: [objectsHelper.mapCreateOp(
+                                    objectId: mapIds[i],
+                                    entries: [
+                                        "baz": .object([
+                                            "timeserial": .string(testCase.serial),
+                                            "data": .object(["string": .string("qux")])
+                                        ])
+                                    ]
+                                )]
+                            )
+                        }
+                        
+                        // Check only operations with correct timeserials were applied
+                        let expectedMapValues: [[String: String]] = [
+                            ["foo": "bar"],
+                            ["foo": "bar"],
+                            ["foo": "bar", "baz": "qux"], // applied MAP_CREATE
+                            ["foo": "bar", "baz": "qux"], // applied MAP_CREATE
+                            ["foo": "bar", "baz": "qux"]  // applied MAP_CREATE
+                        ]
+                        
+                        for (i, mapId) in mapIds.enumerated() {
+                            let expectedMapValue = expectedMapValues[i]
+                            let expectedKeysCount = expectedMapValue.count
+                            
+                            let mapObj = try #require(root.get(key: mapId)?.liveMapValue)
+                            #expect(try mapObj.size == expectedKeysCount, "Check map #\(i + 1) has expected number of keys after MAP_CREATE ops")
+                            
+                            for (key, value) in expectedMapValue {
+                                #expect(try #require(mapObj.get(key: key)?.stringValue) == value, "Check map #\(i + 1) has expected value for \"\(key)\" key after MAP_CREATE ops")
+                            }
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "can apply MAP_SET with primitives object operation messages",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        
+                        // Define primitive key data similar to JS test
+                        let primitiveKeyData: [(key: String, data: [String: JSONValue])] = [
+                            (key: "stringKey", data: ["string": .string("stringValue")]),
+                            (key: "emptyStringKey", data: ["string": .string("")]),
+                            (key: "bytesKey", data: ["bytes": .string("eyJwcm9kdWN0SWQiOiAiMDAxIiwgInByb2R1Y3ROYW1lIjogImNhciJ9")]),
+                            (key: "emptyBytesKey", data: ["bytes": .string("")]),
+                            (key: "numberKey", data: ["number": .number(1)]),
+                            (key: "zeroKey", data: ["number": .number(0)]),
+                            (key: "trueKey", data: ["boolean": .bool(true)]),
+                            (key: "falseKey", data: ["boolean": .bool(false)])
+                        ]
+                        
+                        // Check root is empty before ops
+                        for keyData in primitiveKeyData {
+                            #expect(try root.get(key: keyData.key) == nil, "Check \"\(keyData.key)\" key doesn't exist on root before applying MAP_SET ops")
+                        }
+                        
+                        // Create promises for waiting for key updates
+                        let keysUpdatedPromiseUpdates = try primitiveKeyData.map { _ in try root.updates() }
+                        async let keysUpdatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
+                            for (i, keyData) in primitiveKeyData.enumerated() {
+                                group.addTask {
+                                    await waitForMapKeyUpdate(keysUpdatedPromiseUpdates[i], keyData.key)
+                                }
+                            }
+                            while try await group.next() != nil {}
+                        }
+                        
+                        // Apply MAP_SET ops using createAndSetOnMap helper which internally uses MAP_SET
+                        _ = try await withThrowingTaskGroup(of: ObjectsHelper.OperationResult.self) { group in
+                            for keyData in primitiveKeyData {
+                                group.addTask {
+                                    // We'll create dummy objects and set them, which uses MAP_SET internally
+                                    try await objectsHelper.createAndSetOnMap(
+                                        channelName: channelName,
+                                        mapObjectId: "root",
+                                        key: keyData.key,
+                                        createOp: objectsHelper.mapCreateRestOp(data: ["value": .object(keyData.data)])
+                                    )
+                                }
+                            }
+                            var results: [ObjectsHelper.OperationResult] = []
+                            while let result = try await group.next() {
+                                results.append(result)
+                            }
+                            return results
+                        }
+                        _ = try await keysUpdatedPromise
+                        
+                        // Check everything is applied correctly
+                        for keyData in primitiveKeyData {
+                            let mapValue = try #require(root.get(key: keyData.key)?.liveMapValue)
+                            
+                            if let bytesString = keyData.data["bytes"]?.stringValue {
+                                let expectedData = Data(base64Encoded: bytesString)
+                                #expect(try mapValue.get(key: "value")?.dataValue == expectedData, "Check root has correct value for \"\(keyData.key)\" key after MAP_SET op")
+                            } else if let numberValue = keyData.data["number"]?.numberValue {
+                                #expect(try mapValue.get(key: "value")?.numberValue == Double(numberValue), "Check root has correct value for \"\(keyData.key)\" key after MAP_SET op")
+                            } else if let stringValue = keyData.data["string"]?.stringValue {
+                                #expect(try mapValue.get(key: "value")?.stringValue == stringValue, "Check root has correct value for \"\(keyData.key)\" key after MAP_SET op")
+                            } else if let boolValue = keyData.data["boolean"]?.boolValue {
+                                #expect(try mapValue.get(key: "value")?.boolValue == boolValue, "Check root has correct value for \"\(keyData.key)\" key after MAP_SET op")
+                            }
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "can apply MAP_SET with object ids object operation messages",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        
+                        // Check no object ids are set on root
+                        #expect(try root.get(key: "keyToCounter") == nil, "Check \"keyToCounter\" key doesn't exist on root before applying MAP_SET ops")
+                        #expect(try root.get(key: "keyToMap") == nil, "Check \"keyToMap\" key doesn't exist on root before applying MAP_SET ops")
+                        
+                        let objectsCreatedPromiseUpdates1 = try root.updates()
+                        let objectsCreatedPromiseUpdates2 = try root.updates()
+                        async let objectsCreatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
+                            group.addTask {
+                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates1, "keyToCounter")
+                            }
+                            group.addTask {
+                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates2, "keyToMap")
+                            }
+                            while try await group.next() != nil {}
+                        }
+                        
+                        // Create new objects and set on root
+                        _ = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "keyToCounter",
+                            createOp: objectsHelper.counterCreateRestOp(number: 1)
+                        )
+                        
+                        _ = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "keyToMap",
+                            createOp: objectsHelper.mapCreateRestOp(data: ["stringKey": .object(["string": .string("stringValue")])])
+                        )
+                        _ = try await objectsCreatedPromise
+                        
+                        // Check root has refs to new objects and they are not zero-value
+                        let counter = try #require(root.get(key: "keyToCounter")?.liveCounterValue)
+                        #expect(try counter.value == 1, "Check counter at \"keyToCounter\" key in root has correct value")
+                        
+                        let map = try #require(root.get(key: "keyToMap")?.liveMapValue)
+                        #expect(try map.size == 1, "Check map at \"keyToMap\" key in root has correct number of keys")
+                        #expect(try #require(map.get(key: "stringKey")?.stringValue) == "stringValue", "Check map at \"keyToMap\" key in root has correct \"stringKey\" value")
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "can apply COUNTER_CREATE object operation messages",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        
+                        // Define counters fixtures similar to JS test
+                        let countersFixtures: [(name: String, count: Int?)] = [
+                            (name: "emptyCounter", count: nil),
+                            (name: "zeroCounter", count: 0),
+                            (name: "valueCounter", count: 10),
+                            (name: "negativeValueCounter", count: -10)
+                        ]
+                        
+                        // Check no counters exist on root
+                        for fixture in countersFixtures {
+                            let key = fixture.name
+                            #expect(try root.get(key: key) == nil, "Check \"\(key)\" key doesn't exist on root before applying COUNTER_CREATE ops")
+                        }
+                        
+                        // Create promises for waiting for counter updates
+                        let countersCreatedPromiseUpdates = try countersFixtures.map { _ in try root.updates() }
+                        async let countersCreatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
+                            for (i, fixture) in countersFixtures.enumerated() {
+                                group.addTask {
+                                    await waitForMapKeyUpdate(countersCreatedPromiseUpdates[i], fixture.name)
+                                }
+                            }
+                            while try await group.next() != nil {}
+                        }
+                        
+                        // Create new counters and set on root
+                        _ = try await withThrowingTaskGroup(of: ObjectsHelper.OperationResult.self) { group in
+                            for fixture in countersFixtures {
+                                group.addTask {
+                                    try await objectsHelper.createAndSetOnMap(
+                                        channelName: channelName,
+                                        mapObjectId: "root",
+                                        key: fixture.name,
+                                        createOp: objectsHelper.counterCreateRestOp(number: fixture.count)
+                                    )
+                                }
+                            }
+                            var results: [ObjectsHelper.OperationResult] = []
+                            while let result = try await group.next() {
+                                results.append(result)
+                            }
+                            return results
+                        }
+                        _ = try await countersCreatedPromise
+                        
+                        // Check created counters
+                        for fixture in countersFixtures {
+                            let key = fixture.name
+                            let counterObj = try #require(root.get(key: key)?.liveCounterValue)
+                            
+                            // Check counters have correct values
+                            let expectedValue = Double(fixture.count ?? 0)
+                            #expect(try counterObj.value == expectedValue, "Check counter at \"\(key)\" key in root has correct value")
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "can apply COUNTER_INC object operation messages",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        let counterKey = "counter"
+                        var expectedCounterValue = 0.0
+                        
+                        let counterCreatedPromiseUpdates = try root.updates()
+                        async let counterCreatedPromise: Void = waitForMapKeyUpdate(counterCreatedPromiseUpdates, counterKey)
+                        
+                        // Create new counter and set on root
+                        let counterResult = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: counterKey,
+                            createOp: objectsHelper.counterCreateRestOp(number: Int(expectedCounterValue))
+                        )
+                        _ = try await counterCreatedPromise
+                        
+                        let counter = try #require(root.get(key: counterKey)?.liveCounterValue)
+                        // Check counter has expected value before COUNTER_INC
+                        #expect(try counter.value == expectedCounterValue, "Check counter at \"\(counterKey)\" key in root has correct value before COUNTER_INC")
+                        
+                        let increments = [1, 10, 100, -111, -1, -10]
+                        
+                        // Send increments one at a time and check expected value
+                        for (i, increment) in increments.enumerated() {
+                            expectedCounterValue += Double(increment)
+                            
+                            let counterUpdatedPromiseUpdates = try counter.updates()
+                            async let counterUpdatedPromise: Void = waitForCounterUpdate(counterUpdatedPromiseUpdates)
+                            
+                            // Use the public API to increment - this will send COUNTER_INC internally
+                            try await counter.increment(amount: Double(increment))
+                            _ = try await counterUpdatedPromise
+                            
+                            #expect(try counter.value == expectedCounterValue, "Check counter at \"\(counterKey)\" key in root has correct value after \(i + 1) COUNTER_INC ops")
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "can apply OBJECT_DELETE object operation messages",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        let channel = ctx.channel
+                        
+                        let objectsCreatedPromiseUpdates1 = try root.updates()
+                        let objectsCreatedPromiseUpdates2 = try root.updates()
+                        async let objectsCreatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
+                            group.addTask {
+                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates1, "map")
+                            }
+                            group.addTask {
+                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates2, "counter")
+                            }
+                            while try await group.next() != nil {}
+                        }
+                        
+                        // Create initial objects and set on root
+                        let mapResult = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "map",
+                            createOp: objectsHelper.mapCreateRestOp()
+                        )
+                        let counterResult = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "counter",
+                            createOp: objectsHelper.counterCreateRestOp()
+                        )
+                        _ = try await objectsCreatedPromise
+                        
+                        #expect(try root.get(key: "map") != nil, "Check map exists on root before OBJECT_DELETE")
+                        #expect(try root.get(key: "counter") != nil, "Check counter exists on root before OBJECT_DELETE")
+                        
+                        // Inject OBJECT_DELETE operations
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "aaa", timestamp: 0, counter: 0),
+                            siteCode: "aaa",
+                            state: [objectsHelper.objectDeleteOp(objectId: mapResult.objectId)]
+                        )
+                        try await objectsHelper.processObjectOperationMessageOnChannel(
+                            channel: channel,
+                            serial: lexicoTimeserial(seriesId: "aaa", timestamp: 1, counter: 0),
+                            siteCode: "aaa",
+                            state: [objectsHelper.objectDeleteOp(objectId: counterResult.objectId)]
+                        )
+                        
+                        #expect(try root.get(key: "map") == nil, "Check map is not accessible on root after OBJECT_DELETE")
+                        #expect(try root.get(key: "counter") == nil, "Check counter is not accessible on root after OBJECT_DELETE")
+                    }
+                )
             ]
 
             let applyOperationsDuringSyncScenarios: [TestScenario<Context>] = [
