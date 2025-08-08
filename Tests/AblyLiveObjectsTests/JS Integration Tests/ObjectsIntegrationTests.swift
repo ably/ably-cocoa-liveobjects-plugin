@@ -2821,6 +2821,111 @@ private struct ObjectsIntegrationTests {
         }
         
         static let scenarios: [TestScenario<Context>] = [
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: true,
+                description: "can subscribe to the incoming COUNTER_INC operation on a LiveCounter",
+                action: { ctx in
+                    let counter = try #require(ctx.root.get(key: ctx.sampleCounterKey)?.liveCounterValue)
+                    
+                    async let subscriptionPromise: Void = withCheckedThrowingContinuation { continuation in
+                        do {
+                            try counter.subscribe { update, _ in
+                                #expect(update.amount == 1, "Check counter subscription callback is called with an expected update object for COUNTER_INC operation")
+                                continuation.resume()
+                            }
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                    
+                    _ = try await ctx.objectsHelper.operationRequest(
+                        channelName: ctx.channelName,
+                        opBody: ctx.objectsHelper.counterIncRestOp(objectId: ctx.sampleCounterObjectId, number: 1)
+                    )
+                    
+                    try await subscriptionPromise
+                }
+            ),
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: true,
+                description: "can subscribe to multiple incoming operations on a LiveCounter",
+                action: { ctx in
+                    let counter = try #require(ctx.root.get(key: ctx.sampleCounterKey)?.liveCounterValue)
+                    let expectedCounterIncrements = [100.0, -100.0, Double(Int.max), Double(-Int.max)]
+                    
+                    actor UpdateIndexTracker {
+                        private var index = 0
+                        
+                        func getAndIncrement() -> Int {
+                            let current = index
+                            index += 1
+                            return current
+                        }
+                    }
+                    
+                    let tracker = UpdateIndexTracker()
+                    
+                    async let subscriptionPromise: Void = withCheckedThrowingContinuation { continuation in
+                        do {
+                            try counter.subscribe { update, _ in
+                                Task {
+                                    let currentUpdateIndex = await tracker.getAndIncrement()
+                                    let expectedInc = expectedCounterIncrements[currentUpdateIndex]
+                                    #expect(update.amount == expectedInc, "Check counter subscription callback is called with an expected update object for \(currentUpdateIndex + 1) times")
+                                    
+                                    if currentUpdateIndex == expectedCounterIncrements.count - 1 {
+                                        continuation.resume()
+                                    }
+                                }
+                            }
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                    
+                    for increment in expectedCounterIncrements {
+                        _ = try await ctx.objectsHelper.operationRequest(
+                            channelName: ctx.channelName,
+                            opBody: ctx.objectsHelper.counterIncRestOp(objectId: ctx.sampleCounterObjectId, number: increment)
+                        )
+                    }
+                    
+                    try await subscriptionPromise
+                }
+            ),
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: true,
+                description: "can subscribe to the incoming MAP_SET operation on a LiveMap",
+                action: { ctx in
+                    let map = try #require(ctx.root.get(key: ctx.sampleMapKey)?.liveMapValue)
+                    
+                    async let subscriptionPromise: Void = withCheckedThrowingContinuation { continuation in
+                        do {
+                            try map.subscribe { update, _ in
+                                // Check that the update contains the expected key with "updated" status
+                                #expect(update.update["stringKey"] == .updated, "Check map subscription callback is called with an expected update object for MAP_SET operation")
+                                continuation.resume()
+                            }
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                    
+                    _ = try await ctx.objectsHelper.operationRequest(
+                        channelName: ctx.channelName,
+                        opBody: ctx.objectsHelper.mapSetRestOp(
+                            objectId: ctx.sampleMapObjectId,
+                            key: "stringKey",
+                            value: ["string": "stringValue"]
+                        )
+                    )
+                    
+                    try await subscriptionPromise
+                }
+            ),
         ]
     }
     

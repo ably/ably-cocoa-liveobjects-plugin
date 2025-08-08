@@ -456,7 +456,7 @@ final class ObjectsHelper: Sendable {
     }
 
     /// Creates a counter increment REST operation
-    func counterIncRestOp(objectId: String, number: Int) -> [String: JSONValue] {
+    func counterIncRestOp(objectId: String, number: Double) -> [String: JSONValue] {
         [
             "operation": .string(Actions.counterInc.stringValue),
             "objectId": .string(objectId),
