@@ -2297,22 +2297,23 @@ private struct ObjectsIntegrationTests {
                             (name: "negativeMaxSafeIntegerCounter", count: -Double(Int.max))
                         ]
                         
-                        let counters = try await withThrowingTaskGroup(of: (any LiveCounter).self, returning: [any LiveCounter].self) { group in
-                            for fixture in countersFixtures {
+                        let counters = try await withThrowingTaskGroup(of: (index: Int, counter: any LiveCounter).self, returning: [any LiveCounter].self) { group in
+                            for (index, fixture) in countersFixtures.enumerated() {
                                 group.addTask {
-                                    if let count = fixture.count {
-                                        return try await objects.createCounter(count: count)
+                                    let counter = if let count = fixture.count {
+                                        try await objects.createCounter(count: count)
                                     } else {
-                                        return try await objects.createCounter()
+                                        try await objects.createCounter()
                                     }
+                                    return (index: index, counter: counter)
                                 }
                             }
                             
-                            var results: [any LiveCounter] = []
-                            while let counter = try await group.next() {
-                                results.append(counter)
+                            var results: [(index: Int, counter: any LiveCounter)] = []
+                            while let result = try await group.next() {
+                                results.append(result)
                             }
-                            return results
+                            return results.sorted { $0.index < $1.index }.map(\.counter)
                         }
                         
                         for (i, counter) in counters.enumerated() {
