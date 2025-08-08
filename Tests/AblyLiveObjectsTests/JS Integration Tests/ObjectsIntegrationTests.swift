@@ -2348,19 +2348,18 @@ private struct ObjectsIntegrationTests {
                     }
                 ),
                 .init(
-                    disabled: true,
+                    disabled: false,
                     allTransportsAndProtocols: false,
                     description: "Objects.createCounter can return LiveCounter with initial value without applying CREATE operation",
                     action: { ctx in
                         let objects = ctx.objects
                         
-                        // TODO: Implement test helper to prevent publishing of ops to realtime
-                        // This requires SDK to provide a test hook to replace Objects.publish method
-                        fatalError("TODO: Need SDK test hook to replace Objects.publish method to prevent publishing ops")
-                        
-                        // This test would verify that counter gets initial value even when CREATE op is not published
-                        // let counter = try await objects.createCounter(initialValue: 1)
-                        // #expect(try counter.value == 1, "Check counter has expected initial value")
+                        // prevent publishing of ops to realtime so we guarantee that the initial value doesn't come from a CREATE op
+                        let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
+                        internallyTypedObjects.testsOnly_overridePublish(with: { _ in })
+
+                        let counter = try await objects.createCounter(count: 1)
+                        #expect(try counter.value == 1, "Check counter has expected initial value")
                     }
                 ),
                 .init(
@@ -2376,11 +2375,43 @@ private struct ObjectsIntegrationTests {
                         // This requires SDK to provide a test hook to replace Objects.publish method
                         fatalError("TODO: Need SDK test hook to replace Objects.publish method to echo CREATE op with forged initial value")
                         
+                        /* Original JavaScript test:
+                        {
+                          allTransportsAndProtocols: true,
+                          description: 'Objects.createCounter can return LiveCounter with initial value from applied CREATE operation',
+                          action: async (ctx) => {
+                            const { objects, objectsHelper, helper, channel } = ctx;
+
+                            // instead of sending CREATE op to the realtime, echo it immediately to the client
+                            // with forged initial value so we can check that counter gets initialized with a value from a CREATE op
+                            helper.recordPrivateApi('replace.Objects.publish');
+                            objects.publish = async (objectMessages) => {
+                              const counterId = objectMessages[0].operation.objectId;
+                              // this should result execute regular operation application procedure and create an object in the pool with forged initial value
+                              await objectsHelper.processObjectOperationMessageOnChannel({
+                                channel,
+                                serial: lexicoTimeserial('aaa', 1, 1),
+                                siteCode: 'aaa',
+                                state: [objectsHelper.counterCreateOp({ objectId: counterId, count: 10 })],
+                              });
+                            };
+
+                            const counter = await objects.createCounter(1);
+
+                            // counter should be created with forged initial value instead of the actual one
+                            expect(counter.value()).to.equal(
+                              10,
+                              'Check counter value has the expected initial value from a CREATE operation',
+                            );
+                          },
+                        },
+                        */
+                        
                         // This test would verify that counter gets initialized with value from CREATE op instead of local value
                         // Instead of sending CREATE op to realtime, echo it immediately to client with forged initial value
                         // so we can check that counter gets initialized with a value from a CREATE op
                         //
-                        // let counter = try await objects.createCounter(initialValue: 1)
+                        // let counter = try await objects.createCounter(count: 1)
                         // counter should be created with forged initial value instead of the actual one
                         // #expect(try counter.value == 10, "Check counter value has the expected initial value from a CREATE operation")
                     }
@@ -2398,12 +2429,44 @@ private struct ObjectsIntegrationTests {
                         // This requires SDK to provide a test hook to replace Objects.publish method
                         fatalError("TODO: Need SDK test hook to replace Objects.publish and get object ID to inject CREATE op")
                         
+                        /* Original JavaScript test:
+                        {
+                          description:
+                            'initial value is not double counted for LiveCounter from Objects.createCounter when CREATE op is received',
+                          action: async (ctx) => {
+                            const { objects, objectsHelper, helper, channel } = ctx;
+
+                            // prevent publishing of ops to realtime so we can guarantee order of operations
+                            helper.recordPrivateApi('replace.Objects.publish');
+                            objects.publish = () => {};
+
+                            // create counter locally, should have an initial value set
+                            const counter = await objects.createCounter(1);
+                            helper.recordPrivateApi('call.LiveObject.getObjectId');
+                            const counterId = counter.getObjectId();
+
+                            // now inject CREATE op for a counter with a forged value. it should not be applied
+                            await objectsHelper.processObjectOperationMessageOnChannel({
+                              channel,
+                              serial: lexicoTimeserial('aaa', 1, 1),
+                              siteCode: 'aaa',
+                              state: [objectsHelper.counterCreateOp({ objectId: counterId, count: 10 })],
+                            });
+
+                            expect(counter.value()).to.equal(
+                              1,
+                              `Check counter initial value is not double counted after being created and receiving CREATE operation`,
+                            );
+                          },
+                        },
+                        */
+                        
                         // This test would verify that initial value is not double counted when CREATE op is received
                         // Prevent publishing of ops to realtime so we can guarantee order of operations
                         // Create counter locally, should have an initial value set
                         // Then inject CREATE op for a counter with a forged value. it should not be applied
                         //
-                        // let counter = try await objects.createCounter(initialValue: 1)
+                        // let counter = try await objects.createCounter(count: 1)
                         // let counterId = counter.getObjectId() // Need SDK test hook for this
                         // Now inject CREATE op for a counter with a forged value. it should not be applied
                         // await objectsHelper.processObjectOperationMessageOnChannel(...)
@@ -2616,8 +2679,24 @@ private struct ObjectsIntegrationTests {
                         // This requires SDK to provide a test hook to replace Objects.publish method
                         fatalError("TODO: Need SDK test hook to replace Objects.publish method to prevent publishing ops")
                         
+                        /* Original JavaScript test:
+                        {
+                          description: 'Objects.createMap can return LiveMap with initial value without applying CREATE operation',
+                          action: async (ctx) => {
+                            const { objects, helper } = ctx;
+
+                            // prevent publishing of ops to realtime so we guarantee that the initial value doesn't come from a CREATE op
+                            helper.recordPrivateApi('replace.Objects.publish');
+                            objects.publish = () => {};
+
+                            const map = await objects.createMap({ foo: 'bar' });
+                            expect(map.get('foo')).to.equal('bar', `Check map has expected initial value`);
+                          },
+                        },
+                        */
+                        
                         // This test would verify that map gets initial value even when CREATE op is not published
-                        // let map = try await objects.createMap(initialData: ["foo": "bar"])
+                        // let map = try await objects.createMap(entries: ["foo": .primitive(.string("bar"))])
                         // #expect(try #require(map.get(key: "foo")?.stringValue) == "bar", "Check map has expected initial value")
                     }
                 ),
@@ -2634,11 +2713,49 @@ private struct ObjectsIntegrationTests {
                         // This requires SDK to provide a test hook to replace Objects.publish method
                         fatalError("TODO: Need SDK test hook to replace Objects.publish method to echo CREATE op with forged initial value")
                         
+                        /* Original JavaScript test:
+                        {
+                          allTransportsAndProtocols: true,
+                          description: 'Objects.createMap can return LiveMap with initial value from applied CREATE operation',
+                          action: async (ctx) => {
+                            const { objects, objectsHelper, helper, channel } = ctx;
+
+                            // instead of sending CREATE op to the realtime, echo it immediately to the client
+                            // with forged initial value so we can check that map gets initialized with a value from a CREATE op
+                            helper.recordPrivateApi('replace.Objects.publish');
+                            objects.publish = async (objectMessages) => {
+                              const mapId = objectMessages[0].operation.objectId;
+                              // this should result execute regular operation application procedure and create an object in the pool with forged initial value
+                              await objectsHelper.processObjectOperationMessageOnChannel({
+                                channel,
+                                serial: lexicoTimeserial('aaa', 1, 1),
+                                siteCode: 'aaa',
+                                state: [
+                                  objectsHelper.mapCreateOp({
+                                    objectId: mapId,
+                                    entries: { baz: { timeserial: lexicoTimeserial('aaa', 1, 1), data: { string: 'qux' } } },
+                                  }),
+                                ],
+                              });
+                            };
+
+                            const map = await objects.createMap({ foo: 'bar' });
+
+                            // map should be created with forged initial value instead of the actual one
+                            expect(map.get('foo'), `Check key "foo" was not set on a map client-side`).to.not.exist;
+                            expect(map.get('baz')).to.equal(
+                              'qux',
+                              `Check key "baz" was set on a map from a CREATE operation after object creation`,
+                            );
+                          },
+                        },
+                        */
+                        
                         // This test would verify that map gets initialized with value from CREATE op instead of local value
                         // Instead of sending CREATE op to realtime, echo it immediately to client with forged initial value
                         // so we can check that map gets initialized with a value from a CREATE op
                         //
-                        // let map = try await objects.createMap(initialData: ["foo": "bar"])
+                        // let map = try await objects.createMap(entries: ["foo": .primitive(.string("bar"))])
                         // map should be created with forged initial value instead of the actual one
                         // #expect(try map.get(key: "foo") == nil, "Check key \"foo\" was not set on a map client-side")
                         // #expect(try #require(map.get(key: "baz")?.stringValue) == "qux", "Check key \"baz\" was set on a map from a CREATE operation after object creation")
@@ -2657,12 +2774,54 @@ private struct ObjectsIntegrationTests {
                         // This requires SDK to provide a test hook to replace Objects.publish method
                         fatalError("TODO: Need SDK test hook to replace Objects.publish and get object ID to inject CREATE op")
                         
+                        /* Original JavaScript test:
+                        {
+                          description:
+                            'initial value is not double counted for LiveMap from Objects.createMap when CREATE op is received',
+                          action: async (ctx) => {
+                            const { objects, objectsHelper, helper, channel } = ctx;
+
+                            // prevent publishing of ops to realtime so we can guarantee order of operations
+                            helper.recordPrivateApi('replace.Objects.publish');
+                            objects.publish = () => {};
+
+                            // create map locally, should have an initial value set
+                            const map = await objects.createMap({ foo: 'bar' });
+                            helper.recordPrivateApi('call.LiveObject.getObjectId');
+                            const mapId = map.getObjectId();
+
+                            // now inject CREATE op for a map with a forged value. it should not be applied
+                            await objectsHelper.processObjectOperationMessageOnChannel({
+                              channel,
+                              serial: lexicoTimeserial('aaa', 1, 1),
+                              siteCode: 'aaa',
+                              state: [
+                                objectsHelper.mapCreateOp({
+                                  objectId: mapId,
+                                  entries: {
+                                    foo: { timeserial: lexicoTimeserial('aaa', 1, 1), data: { string: 'qux' } },
+                                    baz: { timeserial: lexicoTimeserial('aaa', 1, 1), data: { string: 'qux' } },
+                                  },
+                                }),
+                              ],
+                            });
+
+                            expect(map.get('foo')).to.equal(
+                              'bar',
+                              `Check key "foo" was not overridden by a CREATE operation after creating a map locally`,
+                            );
+                            expect(map.get('baz'), `Check key "baz" was not set by a CREATE operation after creating a map locally`).to
+                              .not.exist;
+                          },
+                        },
+                        */
+                        
                         // This test would verify that initial value is not double counted when CREATE op is received
                         // Prevent publishing of ops to realtime so we can guarantee order of operations
                         // Create map locally, should have an initial value set
                         // Then inject CREATE op for a map with a forged value. it should not be applied
                         //
-                        // let map = try await objects.createMap(initialData: ["foo": "bar"])
+                        // let map = try await objects.createMap(entries: ["foo": .primitive(.string("bar"))])
                         // let mapId = map.getObjectId() // Need SDK test hook for this
                         // Now inject CREATE op for a map with a forged value. it should not be applied
                         // await objectsHelper.processObjectOperationMessageOnChannel(...)
