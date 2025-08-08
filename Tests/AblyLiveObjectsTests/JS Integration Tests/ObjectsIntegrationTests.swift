@@ -2956,6 +2956,96 @@ private struct ObjectsIntegrationTests {
                     try await subscriptionPromise
                 }
             ),
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: true,
+                description: "can subscribe to multiple incoming operations on a LiveMap",
+                action: { ctx in
+                    let map = try #require(ctx.root.get(key: ctx.sampleMapKey)?.liveMapValue)
+                    let expectedMapUpdates: [[String: LiveMapUpdateAction]] = [
+                        ["foo": .updated],
+                        ["bar": .updated],
+                        ["foo": .removed],
+                        ["baz": .updated],
+                        ["bar": .removed]
+                    ]
+                    
+                    actor UpdateIndexTracker {
+                        private var index = 0
+                        
+                        func getAndIncrement() -> Int {
+                            let current = index
+                            index += 1
+                            return current
+                        }
+                    }
+                    
+                    let tracker = UpdateIndexTracker()
+                    
+                    async let subscriptionPromise: Void = withCheckedThrowingContinuation { continuation in
+                        do {
+                            try map.subscribe { update, _ in
+                                Task {
+                                    let currentUpdateIndex = await tracker.getAndIncrement()
+                                    let expectedUpdate = expectedMapUpdates[currentUpdateIndex]
+                                    #expect(update.update == expectedUpdate, "Check map subscription callback is called with an expected update object for \(currentUpdateIndex + 1) times")
+                                    
+                                    if currentUpdateIndex == expectedMapUpdates.count - 1 {
+                                        continuation.resume()
+                                    }
+                                }
+                            }
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                    
+                    _ = try await ctx.objectsHelper.operationRequest(
+                        channelName: ctx.channelName,
+                        opBody: ctx.objectsHelper.mapSetRestOp(
+                            objectId: ctx.sampleMapObjectId,
+                            key: "foo",
+                            value: ["string": "something"]
+                        )
+                    )
+                    
+                    _ = try await ctx.objectsHelper.operationRequest(
+                        channelName: ctx.channelName,
+                        opBody: ctx.objectsHelper.mapSetRestOp(
+                            objectId: ctx.sampleMapObjectId,
+                            key: "bar",
+                            value: ["string": "something"]
+                        )
+                    )
+                    
+                    _ = try await ctx.objectsHelper.operationRequest(
+                        channelName: ctx.channelName,
+                        opBody: ctx.objectsHelper.mapRemoveRestOp(
+                            objectId: ctx.sampleMapObjectId,
+                            key: "foo"
+                        )
+                    )
+                    
+                    _ = try await ctx.objectsHelper.operationRequest(
+                        channelName: ctx.channelName,
+                        opBody: ctx.objectsHelper.mapSetRestOp(
+                            objectId: ctx.sampleMapObjectId,
+                            key: "baz",
+                            value: ["string": "something"]
+                        )
+                    )
+                    
+                    _ = try await ctx.objectsHelper.operationRequest(
+                        channelName: ctx.channelName,
+                        opBody: ctx.objectsHelper.mapRemoveRestOp(
+                            objectId: ctx.sampleMapObjectId,
+                            key: "bar"
+                        )
+                    )
+                    
+                    try await subscriptionPromise
+                }
+            ),
         ]
     }
     
