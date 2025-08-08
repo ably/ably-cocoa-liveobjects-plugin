@@ -128,7 +128,7 @@ func base64Decode(_ string: String) -> Data
 - 10 scenarios for subscribe/unsubscribe patterns
 - Uses existing subscription APIs that are already partially implemented
 
-#### Step 3c: Core Operation Scenarios (Medium Risk) — Ported, not checked
+#### Step 3c: Core Operation Scenarios (Medium Risk) — Ported, not checked. Need order checking too
 **applyOperationsScenarios** - Test core object operation functionality
 - 25 scenarios covering all operation types
 - Requires comprehensive ObjectsHelper usage
