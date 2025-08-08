@@ -123,7 +123,7 @@ func base64Decode(_ string: String) -> Data
 - 2 scenarios testing size(), keys(), values(), entries()
 - No complex async patterns or private API access required
 
-#### Step 3b: Subscription Scenarios (Low-Medium Risk)  
+#### Step 3b: Subscription Scenarios (Low-Medium Risk) — Ported, somewhat checked.
 **Then subscriptionCallbacksScenarios** - Test subscription functionality
 - 10 scenarios for subscribe/unsubscribe patterns
 - Uses existing subscription APIs that are already partially implemented

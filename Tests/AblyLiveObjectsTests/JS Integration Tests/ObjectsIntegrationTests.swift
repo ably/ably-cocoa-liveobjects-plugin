@@ -3243,6 +3243,95 @@ private struct ObjectsIntegrationTests {
                     #expect(callbackCount == 1, "Check subscription callback was only called once")
                 }
             ),
+            // Have not implemented "can unsubscribe from LiveMap updates via LiveMap.unsubscribe() call" because this method doesn't exist in the Swift SDK (functions don't have identity)
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: false,
+                description: "can remove all LiveMap update listeners via LiveMap.unsubscribeAll() call",
+                action: { ctx in
+                    let map = try #require(ctx.root.get(key: ctx.sampleMapKey)?.liveMapValue)
+                    let callbacks = 3
+                    
+                    actor CallbackTracker {
+                        private var callbacksCalled: [Int]
+                        private var completedCallbacks = 0
+                        
+                        init(count: Int) {
+                            callbacksCalled = Array(repeating: 0, count: count)
+                        }
+                        
+                        /// Increments the callback count for the subscription at the given index.
+                        /// 
+                        /// This tracks how many times each individual subscription callback has been called,
+                        /// and also keeps a total count of all callback invocations across all subscriptions.
+                        ///
+                        /// - Parameter index: The index of the subscription (0, 1, or 2 in this test)
+                        /// - Returns: `true` if all subscriptions have been called at least once (i.e., we've 
+                        ///           received the first batch of callbacks from all 3 subscriptions), `false` otherwise.
+                        ///           This is used to signal when the subscription promise should complete.
+                        func increment(at index: Int) -> Bool {
+                            callbacksCalled[index] += 1
+                            completedCallbacks += 1
+                            return completedCallbacks >= callbacksCalled.count
+                        }
+                        
+                        func getCounts() -> [Int] {
+                            return callbacksCalled
+                        }
+                    }
+                    
+                    let tracker = CallbackTracker(count: callbacks)
+                    
+                    async let subscriptionPromise: Void = withCheckedThrowingContinuation { continuation in
+                        // Create multiple subscriptions
+                        for i in 0..<callbacks {
+                            do {
+                                try map.subscribe { _, _ in
+                                    Task {
+                                        let allCompleted = await tracker.increment(at: i)
+                                        if allCompleted {
+                                            continuation.resume()
+                                        }
+                                    }
+                                }
+                            } catch {
+                                continuation.resume(throwing: error)
+                            }
+                        }
+                    }
+                    
+                    let mapSets = 3
+                    for i in 0..<mapSets {
+                        let mapUpdatesStream = try map.updates()
+                        async let mapUpdatedPromise: Void = waitForMapKeyUpdate(mapUpdatesStream, "foo-\(i)")
+                        _ = try await ctx.objectsHelper.operationRequest(
+                            channelName: ctx.channelName,
+                            opBody: ctx.objectsHelper.mapSetRestOp(
+                                objectId: ctx.sampleMapObjectId,
+                                key: "foo-\(i)",
+                                value: ["string": "exists"]
+                            )
+                        )
+                        await mapUpdatedPromise
+                        
+                        if i == 0 {
+                            // unsubscribe all after first operation
+                            map.unsubscribeAll()
+                        }
+                    }
+                    
+                    try await subscriptionPromise
+                    
+                    for i in 0..<mapSets {
+                        let value = try #require(map.get(key: "foo-\(i)")?.stringValue)
+                        #expect(value == "exists", "Check map has value for key \"foo-\(i)\" after all map sets")
+                    }
+                    let callbackCounts = await tracker.getCounts()
+                    for count in callbackCounts {
+                        #expect(count == 1, "Check subscription callbacks were called once each")
+                    }
+                }
+            ),
         ]
     }
     
