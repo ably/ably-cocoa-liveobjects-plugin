@@ -2169,6 +2169,117 @@ private struct ObjectsIntegrationTests {
                         #expect(map2 === map, "Check can set a reference to a LiveMap object on a root via a LiveMap.set call")
                     }
                 ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "LiveMap.set throws on invalid input",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        
+                        let mapCreatedPromiseUpdates = try root.updates()
+                        async let mapCreatedPromise: Void = waitForMapKeyUpdate(mapCreatedPromiseUpdates, "map")
+                        
+                        _ = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "map",
+                            createOp: objectsHelper.mapCreateRestOp()
+                        )
+                        _ = try await mapCreatedPromise
+                        
+                        let map = try #require(root.get(key: "map")?.liveMapValue)
+                        
+                        // OMITTED from JS tests due to Swift type system: 
+                        // Key validation: map.set(), map.set(null), map.set(1), map.set(BigInt(1)), 
+                        // map.set(true), map.set(Symbol()), map.set({}), map.set([]), map.set(map)
+                        // Value validation: map.set('key'), map.set('key', null), map.set('key', BigInt(1)),
+                        // map.set('key', Symbol()), map.set('key', {}), map.set('key', [])
+                        // All prevented by Swift's type system - String keys and LiveMapValue values are enforced
+                        
+                        // Note: Swift's LiveMap.set(key:value:) method signature enforces String keys and 
+                        // LiveMapValue values at compile time, making most JS validation tests unnecessary
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "LiveMap.remove sends MAP_REMOVE operation",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        
+                        let mapCreatedPromiseUpdates = try root.updates()
+                        async let mapCreatedPromise: Void = waitForMapKeyUpdate(mapCreatedPromiseUpdates, "map")
+                        
+                        _ = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "map",
+                            createOp: objectsHelper.mapCreateRestOp(data: [
+                                "foo": .object(["number": .number(1)]),
+                                "bar": .object(["number": .number(1)]),
+                                "baz": .object(["number": .number(1)])
+                            ])
+                        )
+                        _ = try await mapCreatedPromise
+                        
+                        let map = try #require(root.get(key: "map")?.liveMapValue)
+                        
+                        let keysUpdatedPromiseUpdates1 = try map.updates()
+                        let keysUpdatedPromiseUpdates2 = try map.updates()
+                        async let keysUpdatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
+                            group.addTask {
+                                await waitForMapKeyUpdate(keysUpdatedPromiseUpdates1, "foo")
+                            }
+                            group.addTask {
+                                await waitForMapKeyUpdate(keysUpdatedPromiseUpdates2, "bar")
+                            }
+                            while try await group.next() != nil {}
+                        }
+                        
+                        async let removeFooPromise: Void = map.remove(key: "foo")
+                        async let removeBarPromise: Void = map.remove(key: "bar")
+                        _ = try await (removeFooPromise, removeBarPromise, keysUpdatedPromise)
+                        
+                        #expect(try map.get(key: "foo") == nil, "Check can remove a key from a root via a LiveMap.remove call")
+                        #expect(try map.get(key: "bar") == nil, "Check can remove a key from a root via a LiveMap.remove call")
+                        #expect(try #require(map.get(key: "baz")?.numberValue) == 1, "Check non-removed keys are still present on a root after LiveMap.remove call for another keys")
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "LiveMap.remove throws on invalid input",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        
+                        let mapCreatedPromiseUpdates = try root.updates()
+                        async let mapCreatedPromise: Void = waitForMapKeyUpdate(mapCreatedPromiseUpdates, "map")
+                        
+                        _ = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "map",
+                            createOp: objectsHelper.mapCreateRestOp()
+                        )
+                        _ = try await mapCreatedPromise
+                        
+                        let map = try #require(root.get(key: "map")?.liveMapValue)
+                        
+                        // OMITTED from JS tests due to Swift type system: 
+                        // map.remove(), map.remove(null), map.remove(1), map.remove(BigInt(1)), 
+                        // map.remove(true), map.remove(Symbol()), map.remove({}), map.remove([]), map.remove(map)
+                        // All prevented by Swift's type system - String key parameter is enforced
+                        
+                        // Note: Swift's LiveMap.remove(key:) method signature enforces String keys at compile time,
+                        // making JS key validation tests unnecessary
+                    }
+                ),
             ]
 
             let liveMapEnumerationScenarios: [TestScenario<Context>] = [
