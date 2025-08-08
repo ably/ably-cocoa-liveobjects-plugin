@@ -134,7 +134,7 @@ func base64Decode(_ string: String) -> Data
 - Requires comprehensive ObjectsHelper usage
 - Tests both success and failure cases
 
-#### Step 3d: Write API Scenarios (Medium Risk) — in progress, will not do batch tests now
+#### Step 3d: Write API Scenarios (Medium Risk) — Ported, not checked. Batch API tests not ported
 **writeApiScenarios** - Test public APIs that users interact with
 - 20 scenarios covering LiveCounter, LiveMap, Objects, and Batch APIs
 - Mix of success cases and input validation
