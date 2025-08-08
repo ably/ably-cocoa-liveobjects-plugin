@@ -3182,6 +3182,67 @@ private struct ObjectsIntegrationTests {
                     }
                 }
             ),
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: false,
+                description: "can unsubscribe from LiveMap updates via returned unsubscribe callback",
+                action: { ctx in
+                    let map = try #require(ctx.root.get(key: ctx.sampleMapKey)?.liveMapValue)
+                    
+                    actor CallbackTracker {
+                        private var callbackCalled = 0
+                        
+                        func increment() {
+                            callbackCalled += 1
+                        }
+                        
+                        func getCount() -> Int {
+                            return callbackCalled
+                        }
+                    }
+                    
+                    let tracker = CallbackTracker()
+                    
+                    async let subscriptionPromise: Void = withCheckedThrowingContinuation { continuation in
+                        do {
+                            try map.subscribe { _, subscriptionResponse in
+                                // unsubscribe from future updates after the first call - do this synchronously
+                                subscriptionResponse.unsubscribe()
+                                Task {
+                                    await tracker.increment()
+                                    continuation.resume()
+                                }
+                            }
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                    
+                    let mapSets = 3
+                    for i in 0..<mapSets {
+                        let mapUpdatesStream = try map.updates()
+                        async let mapUpdatedPromise: Void = waitForMapKeyUpdate(mapUpdatesStream, "foo-\(i)")
+                        _ = try await ctx.objectsHelper.operationRequest(
+                            channelName: ctx.channelName,
+                            opBody: ctx.objectsHelper.mapSetRestOp(
+                                objectId: ctx.sampleMapObjectId,
+                                key: "foo-\(i)",
+                                value: ["string": "exists"]
+                            )
+                        )
+                        await mapUpdatedPromise
+                    }
+                    
+                    try await subscriptionPromise
+                    
+                    for i in 0..<mapSets {
+                        let value = try #require(map.get(key: "foo-\(i)")?.stringValue)
+                        #expect(value == "exists", "Check map has value for key \"foo-\(i)\" after all map sets")
+                    }
+                    let callbackCount = await tracker.getCount()
+                    #expect(callbackCount == 1, "Check subscription callback was only called once")
+                }
+            ),
         ]
     }
     
