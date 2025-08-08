@@ -2669,35 +2669,18 @@ private struct ObjectsIntegrationTests {
                     }
                 ),
                 .init(
-                    disabled: true,
+                    disabled: false,
                     allTransportsAndProtocols: false,
                     description: "Objects.createMap can return LiveMap with initial value without applying CREATE operation",
                     action: { ctx in
                         let objects = ctx.objects
-                        
-                        // TODO: Implement test helper to prevent publishing of ops to realtime
-                        // This requires SDK to provide a test hook to replace Objects.publish method
-                        fatalError("TODO: Need SDK test hook to replace Objects.publish method to prevent publishing ops")
-                        
-                        /* Original JavaScript test:
-                        {
-                          description: 'Objects.createMap can return LiveMap with initial value without applying CREATE operation',
-                          action: async (ctx) => {
-                            const { objects, helper } = ctx;
 
-                            // prevent publishing of ops to realtime so we guarantee that the initial value doesn't come from a CREATE op
-                            helper.recordPrivateApi('replace.Objects.publish');
-                            objects.publish = () => {};
+                        let internallyTypedObjects = try #require(objects as? PublicDefaultRealtimeObjects)
+                        internallyTypedObjects.testsOnly_overridePublish(with: { _ in })
 
-                            const map = await objects.createMap({ foo: 'bar' });
-                            expect(map.get('foo')).to.equal('bar', `Check map has expected initial value`);
-                          },
-                        },
-                        */
-                        
-                        // This test would verify that map gets initial value even when CREATE op is not published
-                        // let map = try await objects.createMap(entries: ["foo": .primitive(.string("bar"))])
-                        // #expect(try #require(map.get(key: "foo")?.stringValue) == "bar", "Check map has expected initial value")
+                        // prevent publishing of ops to realtime so we guarantee that the initial value doesn't come from a CREATE op
+                        let map = try await objects.createMap(entries: ["foo": .primitive(.string("bar"))])
+                        #expect(try #require(map.get(key: "foo")?.stringValue) == "bar", "Check map has expected initial value")
                     }
                 ),
                 .init(
