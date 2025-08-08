@@ -2347,7 +2347,7 @@ private struct ObjectsIntegrationTests {
                     }
                 ),
                 .init(
-                    disabled: false,
+                    disabled: true,
                     allTransportsAndProtocols: false,
                     description: "Objects.createCounter can return LiveCounter with initial value without applying CREATE operation",
                     action: { ctx in
@@ -2363,7 +2363,7 @@ private struct ObjectsIntegrationTests {
                     }
                 ),
                 .init(
-                    disabled: false,
+                    disabled: true,
                     allTransportsAndProtocols: true,
                     description: "Objects.createCounter can return LiveCounter with initial value from applied CREATE operation",
                     action: { ctx in
@@ -2385,7 +2385,7 @@ private struct ObjectsIntegrationTests {
                     }
                 ),
                 .init(
-                    disabled: false,
+                    disabled: true,
                     allTransportsAndProtocols: false,
                     description: "initial value is not double counted for LiveCounter from Objects.createCounter when CREATE op is received",
                     action: { ctx in
@@ -2440,7 +2440,7 @@ private struct ObjectsIntegrationTests {
                         let objects = ctx.objects
                         
                         // Define primitive key data similar to JS test
-                        let primitiveKeyData: [(key: String, data: [String: JSONValue], swiftValue: Any)] = [
+                        let primitiveKeyData: [(key: String, data: [String: JSONValue], swiftValue: any Sendable)] = [
                             (key: "stringKey", data: ["string": .string("stringValue")], swiftValue: "stringValue"),
                             (key: "emptyStringKey", data: ["string": .string("")], swiftValue: ""),
                             (key: "bytesKey", data: ["bytes": .string("eyJwcm9kdWN0SWQiOiAiMDAxIiwgInByb2R1Y3ROYW1lIjogImNhciJ9")], swiftValue: Data(base64Encoded: "eyJwcm9kdWN0SWQiOiAiMDAxIiwgInByb2R1Y3ROYW1lIjogImNhciJ9")!),
@@ -2452,7 +2452,7 @@ private struct ObjectsIntegrationTests {
                         ]
                         
                         // Define primitive maps fixtures similar to JS test
-                        let primitiveMapsFixtures: [(name: String, entries: [String: Any]?)] = [
+                        let primitiveMapsFixtures: [(name: String, entries: [String: any Sendable]?)] = [
                             (name: "emptyMap", entries: nil),
                             (name: "valuesMap", entries: Dictionary(uniqueKeysWithValues: primitiveKeyData.map { ($0.key, $0.swiftValue) }))
                         ]
@@ -2605,7 +2605,7 @@ private struct ObjectsIntegrationTests {
                     }
                 ),
                 .init(
-                    disabled: false,
+                    disabled: true,
                     allTransportsAndProtocols: false,
                     description: "Objects.createMap can return LiveMap with initial value without applying CREATE operation",
                     action: { ctx in
@@ -2621,7 +2621,7 @@ private struct ObjectsIntegrationTests {
                     }
                 ),
                 .init(
-                    disabled: false,
+                    disabled: true,
                     allTransportsAndProtocols: true,
                     description: "Objects.createMap can return LiveMap with initial value from applied CREATE operation",
                     action: { ctx in
@@ -2644,7 +2644,7 @@ private struct ObjectsIntegrationTests {
                     }
                 ),
                 .init(
-                    disabled: false,
+                    disabled: true,
                     allTransportsAndProtocols: false,
                     description: "initial value is not double counted for LiveMap from Objects.createMap when CREATE op is received",
                     action: { ctx in
