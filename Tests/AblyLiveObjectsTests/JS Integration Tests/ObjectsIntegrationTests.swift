@@ -3100,6 +3100,7 @@ private struct ObjectsIntegrationTests {
                     #expect(callbackCount == 1, "Check subscription callback was only called once")
                 }
             ),
+            // Have not implemented "can unsubscribe from LiveCounter updates via LiveCounter.unsubscribe() call" because this method doesn't exist in the Swift SDK (functions don't have identity)
         ]
     }
     
