@@ -1994,9 +1994,8 @@ private struct ObjectsIntegrationTests {
                         for keyData in primitiveKeyData {
                             if let bytesValue = keyData.data["bytes"] {
                                 if case .string(let base64String) = bytesValue {
-                                    // TODO: Add helper method for base64 decoding and buffer comparison
-                                    // expect(BufferUtils.areBuffersEqual(root.get(keyData.key), BufferUtils.base64Decode(keyData.data.bytes)))
-                                    fatalError("TODO: Implement base64 comparison helper")
+                                    let expectedData = Data(base64Encoded: base64String)
+                                    #expect(try #require(root.get(key: keyData.key)?.dataValue) == expectedData, "Check root has correct value for \"\(keyData.key)\" key after OBJECT_SYNC has ended and buffered operations are applied")
                                 }
                             } else {
                                 // Handle other value types
@@ -2331,9 +2330,8 @@ private struct ObjectsIntegrationTests {
                         for keyData in primitiveKeyData {
                             if let bytesValue = keyData.data["bytes"] {
                                 if case .string(let base64String) = bytesValue {
-                                    // TODO: Add helper method for base64 decoding and buffer comparison
-                                    // expect(BufferUtils.areBuffersEqual(root.get(keyData.key), BufferUtils.base64Decode(keyData.data.bytes)))
-                                    fatalError("TODO: Implement base64 comparison helper")
+                                    let expectedData = Data(base64Encoded: base64String)
+                                    #expect(try #require(root.get(key: keyData.key)?.dataValue) == expectedData, "Check root has correct value for \"\(keyData.key)\" key after OBJECT_SYNC has ended and buffered operations are applied")
                                 }
                             } else {
                                 // Handle other value types
