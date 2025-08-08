@@ -2926,6 +2926,36 @@ private struct ObjectsIntegrationTests {
                     try await subscriptionPromise
                 }
             ),
+            .init(
+                disabled: false,
+                allTransportsAndProtocols: true,
+                description: "can subscribe to the incoming MAP_REMOVE operation on a LiveMap",
+                action: { ctx in
+                    let map = try #require(ctx.root.get(key: ctx.sampleMapKey)?.liveMapValue)
+                    
+                    async let subscriptionPromise: Void = withCheckedThrowingContinuation { continuation in
+                        do {
+                            try map.subscribe { update, _ in
+                                // Check that the update contains the expected key with "removed" status
+                                #expect(update.update["stringKey"] == .removed, "Check map subscription callback is called with an expected update object for MAP_REMOVE operation")
+                                continuation.resume()
+                            }
+                        } catch {
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                    
+                    _ = try await ctx.objectsHelper.operationRequest(
+                        channelName: ctx.channelName,
+                        opBody: ctx.objectsHelper.mapRemoveRestOp(
+                            objectId: ctx.sampleMapObjectId,
+                            key: "stringKey"
+                        )
+                    )
+                    
+                    try await subscriptionPromise
+                }
+            ),
         ]
     }
     
