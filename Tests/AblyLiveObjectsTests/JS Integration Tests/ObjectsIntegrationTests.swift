@@ -1878,7 +1878,297 @@ private struct ObjectsIntegrationTests {
             ]
 
             let writeApiScenarios: [TestScenario<Context>] = [
-                // TODO: Implement these scenarios
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "LiveCounter.increment sends COUNTER_INC operation",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        
+                        let counterCreatedPromiseUpdates = try root.updates()
+                        async let counterCreatedPromise: Void = waitForMapKeyUpdate(counterCreatedPromiseUpdates, "counter")
+                        
+                        let counterResult = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "counter",
+                            createOp: objectsHelper.counterCreateRestOp()
+                        )
+                        _ = await counterCreatedPromise
+                        
+                        let counter = try #require(root.get(key: "counter")?.liveCounterValue)
+                        let increments: [Double] = [
+                            1, // value=1
+                            10, // value=11
+                            -11, // value=0
+                            -1, // value=-1
+                            -10, // value=-11
+                            11, // value=0
+                            Double(Int.max), // value=9223372036854775807
+                            -Double(Int.max), // value=0
+                            -Double(Int.max), // value=-9223372036854775807
+                        ]
+                        var expectedCounterValue = 0.0
+                        
+                        for (i, increment) in increments.enumerated() {
+                            expectedCounterValue += increment
+                            
+                            let counterUpdatedPromiseUpdates = try counter.updates()
+                            async let counterUpdatedPromise: Void = waitForCounterUpdate(counterUpdatedPromiseUpdates)
+                            
+                            try await counter.increment(amount: increment)
+                            _ = await counterUpdatedPromise
+                            
+                            #expect(try counter.value == expectedCounterValue, "Check counter has correct value after \(i + 1) LiveCounter.increment calls")
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "LiveCounter.increment throws on invalid input",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        
+                        let counterCreatedPromiseUpdates = try root.updates()
+                        async let counterCreatedPromise: Void = waitForMapKeyUpdate(counterCreatedPromiseUpdates, "counter")
+                        
+                        let counterResult = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "counter",
+                            createOp: objectsHelper.counterCreateRestOp()
+                        )
+                        _ = await counterCreatedPromise
+                        
+                        let counter = try #require(root.get(key: "counter")?.liveCounterValue)
+                        
+                        // Test invalid numeric values - Swift type system prevents most invalid types
+                        // OMITTED from JS tests due to Swift type system: increment(), increment(null), 
+                        // increment('foo'), increment(BigInt(1)), increment(true), increment(Symbol()),
+                        // increment({}), increment([]), increment(counter) - all prevented by Swift's type system
+                        await #expect(throws: Error.self, "Counter value increment should be a valid number") {
+                            try await counter.increment(amount: Double.nan)
+                        }
+                        await #expect(throws: Error.self, "Counter value increment should be a valid number") {
+                            try await counter.increment(amount: Double.infinity)
+                        }
+                        await #expect(throws: Error.self, "Counter value increment should be a valid number") {
+                            try await counter.increment(amount: -Double.infinity)
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "LiveCounter.decrement sends COUNTER_INC operation",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        
+                        let counterCreatedPromiseUpdates = try root.updates()
+                        async let counterCreatedPromise: Void = waitForMapKeyUpdate(counterCreatedPromiseUpdates, "counter")
+                        
+                        let counterResult = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "counter",
+                            createOp: objectsHelper.counterCreateRestOp()
+                        )
+                        _ = await counterCreatedPromise
+                        
+                        let counter = try #require(root.get(key: "counter")?.liveCounterValue)
+                        let decrements: [Double] = [
+                            1, // value=-1
+                            10, // value=-11
+                            -11, // value=0
+                            -1, // value=1
+                            -10, // value=11
+                            11, // value=0
+                            Double(Int.max), // value=-9223372036854775807
+                            -Double(Int.max), // value=0
+                            -Double(Int.max), // value=9223372036854775807
+                        ]
+                        var expectedCounterValue = 0.0
+                        
+                        for (i, decrement) in decrements.enumerated() {
+                            expectedCounterValue -= decrement
+                            
+                            let counterUpdatedPromiseUpdates = try counter.updates()
+                            async let counterUpdatedPromise: Void = waitForCounterUpdate(counterUpdatedPromiseUpdates)
+                            
+                            try await counter.decrement(amount: decrement)
+                            _ = await counterUpdatedPromise
+                            
+                            #expect(try counter.value == expectedCounterValue, "Check counter has correct value after \(i + 1) LiveCounter.decrement calls")
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: false,
+                    description: "LiveCounter.decrement throws on invalid input",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        
+                        let counterCreatedPromiseUpdates = try root.updates()
+                        async let counterCreatedPromise: Void = waitForMapKeyUpdate(counterCreatedPromiseUpdates, "counter")
+                        
+                        let counterResult = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "counter",
+                            createOp: objectsHelper.counterCreateRestOp()
+                        )
+                        _ = await counterCreatedPromise
+                        
+                        let counter = try #require(root.get(key: "counter")?.liveCounterValue)
+                        
+                        // Test invalid numeric values - Swift type system prevents most invalid types
+                        // OMITTED from JS tests due to Swift type system: decrement(), decrement(null),
+                        // decrement('foo'), decrement(BigInt(1)), decrement(true), decrement(Symbol()),
+                        // decrement({}), decrement([]), decrement(counter) - all prevented by Swift's type system
+                        await #expect(throws: Error.self, "Counter value decrement should be a valid number") {
+                            try await counter.decrement(amount: Double.nan)
+                        }
+                        await #expect(throws: Error.self, "Counter value decrement should be a valid number") {
+                            try await counter.decrement(amount: Double.infinity)
+                        }
+                        await #expect(throws: Error.self, "Counter value decrement should be a valid number") {
+                            try await counter.decrement(amount: -Double.infinity)
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "LiveMap.set sends MAP_SET operation with primitive values",
+                    action: { ctx in
+                        let root = ctx.root
+                        
+                        // Define primitive key data similar to JS test
+                        let primitiveKeyData: [(key: String, data: [String: JSONValue], swiftValue: LiveMapValue)] = [
+                            (key: "stringKey", data: ["string": .string("stringValue")], swiftValue: .primitive(.string("stringValue"))),
+                            (key: "emptyStringKey", data: ["string": .string("")], swiftValue: .primitive(.string(""))),
+                            (key: "bytesKey", data: ["bytes": .string("eyJwcm9kdWN0SWQiOiAiMDAxIiwgInByb2R1Y3ROYW1lIjogImNhciJ9")], swiftValue: .primitive(.data(Data(base64Encoded: "eyJwcm9kdWN0SWQiOiAiMDAxIiwgInByb2R1Y3ROYW1lIjogImNhciJ9")!))),
+                            (key: "emptyBytesKey", data: ["bytes": .string("")], swiftValue: .primitive(.data(Data(base64Encoded: "")!))),
+                            (key: "numberKey", data: ["number": .number(1)], swiftValue: .primitive(.number(1))),
+                            (key: "zeroKey", data: ["number": .number(0)], swiftValue: .primitive(.number(0))),
+                            (key: "trueKey", data: ["boolean": .bool(true)], swiftValue: .primitive(.bool(true))),
+                            (key: "falseKey", data: ["boolean": .bool(false)], swiftValue: .primitive(.bool(false)))
+                        ]
+                        
+                        let keysUpdatedPromiseUpdates = try primitiveKeyData.map { _ in try root.updates() }
+                        async let keysUpdatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
+                            for (i, keyData) in primitiveKeyData.enumerated() {
+                                group.addTask {
+                                    await waitForMapKeyUpdate(keysUpdatedPromiseUpdates[i], keyData.key)
+                                }
+                            }
+                            while try await group.next() != nil {}
+                        }
+                        
+                        _ = try await withThrowingTaskGroup(of: Void.self) { group in
+                            for keyData in primitiveKeyData {
+                                group.addTask {
+                                    try await root.set(key: keyData.key, value: keyData.swiftValue)
+                                }
+                            }
+                            while try await group.next() != nil {}
+                        }
+                        _ = try await keysUpdatedPromise
+                        
+                        // Check everything is applied correctly
+                        for keyData in primitiveKeyData {
+                            let actualValue = try #require(try root.get(key: keyData.key))
+                            
+                            switch keyData.swiftValue {
+                            case let .primitive(.data(expectedData)):
+                                let actualData = try #require(actualValue.dataValue)
+                                #expect(actualData == expectedData, "Check root has correct value for \"\(keyData.key)\" key after LiveMap.set call")
+                            case let .primitive(.string(expectedString)):
+                                let actualString = try #require(actualValue.stringValue)
+                                #expect(actualString == expectedString, "Check root has correct value for \"\(keyData.key)\" key after LiveMap.set call")
+                            case let .primitive(.number(expectedNumber)):
+                                let actualNumber = try #require(actualValue.numberValue)
+                                #expect(actualNumber == expectedNumber, "Check root has correct value for \"\(keyData.key)\" key after LiveMap.set call")
+                            case let .primitive(.bool(expectedBool)):
+                                let actualBool = try #require(actualValue.boolValue as Bool?)
+                                #expect(actualBool == expectedBool, "Check root has correct value for \"\(keyData.key)\" key after LiveMap.set call")
+                            default:
+                                Issue.record("Unexpected value type in test")
+                            }
+                        }
+                    }
+                ),
+                .init(
+                    disabled: false,
+                    allTransportsAndProtocols: true,
+                    description: "LiveMap.set sends MAP_SET operation with reference to another LiveObject",
+                    action: { ctx in
+                        let root = ctx.root
+                        let objectsHelper = ctx.objectsHelper
+                        let channelName = ctx.channelName
+                        
+                        let objectsCreatedPromiseUpdates1 = try root.updates()
+                        let objectsCreatedPromiseUpdates2 = try root.updates()
+                        async let objectsCreatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
+                            group.addTask {
+                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates1, "counter")
+                            }
+                            group.addTask {
+                                await waitForMapKeyUpdate(objectsCreatedPromiseUpdates2, "map")
+                            }
+                            while try await group.next() != nil {}
+                        }
+                        
+                        _ = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "counter",
+                            createOp: objectsHelper.counterCreateRestOp()
+                        )
+                        _ = try await objectsHelper.createAndSetOnMap(
+                            channelName: channelName,
+                            mapObjectId: "root",
+                            key: "map",
+                            createOp: objectsHelper.mapCreateRestOp()
+                        )
+                        _ = try await objectsCreatedPromise
+                        
+                        let counter = try #require(root.get(key: "counter")?.liveCounterValue)
+                        let map = try #require(root.get(key: "map")?.liveMapValue)
+                        
+                        let keysUpdatedPromiseUpdates1 = try root.updates()
+                        let keysUpdatedPromiseUpdates2 = try root.updates()
+                        async let keysUpdatedPromise: Void = withThrowingTaskGroup(of: Void.self) { group in
+                            group.addTask {
+                                await waitForMapKeyUpdate(keysUpdatedPromiseUpdates1, "counter2")
+                            }
+                            group.addTask {
+                                await waitForMapKeyUpdate(keysUpdatedPromiseUpdates2, "map2")
+                            }
+                            while try await group.next() != nil {}
+                        }
+                        
+                        async let setCounter2Promise: Void = root.set(key: "counter2", value: .liveCounter(counter))
+                        async let setMap2Promise: Void = root.set(key: "map2", value: .liveMap(map))
+                        _ = try await (setCounter2Promise, setMap2Promise, keysUpdatedPromise)
+                        
+                        let counter2 = try #require(root.get(key: "counter2")?.liveCounterValue)
+                        let map2 = try #require(root.get(key: "map2")?.liveMapValue)
+                        
+                        #expect(counter2 === counter, "Check can set a reference to a LiveCounter object on a root via a LiveMap.set call")
+                        #expect(map2 === map, "Check can set a reference to a LiveMap object on a root via a LiveMap.set call")
+                    }
+                ),
             ]
 
             let liveMapEnumerationScenarios: [TestScenario<Context>] = [
