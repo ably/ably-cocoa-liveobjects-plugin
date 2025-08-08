@@ -3106,12 +3106,9 @@ private struct ObjectsIntegrationTests {
                 allTransportsAndProtocols: false,
                 description: "can remove all LiveCounter update listeners via LiveCounter.unsubscribeAll() call",
                 action: { ctx in
-                    // JS: const counter = root.get(sampleCounterKey);
                     let counter = try #require(ctx.root.get(key: ctx.sampleCounterKey)?.liveCounterValue)
-                    // JS: const callbacks = 3;
                     let callbacks = 3
                     
-                    // JS: const callbacksCalled = new Array(callbacks).fill(0);
                     actor CallbackTracker {
                         private var callbacksCalled: [Int]
                         private var completedCallbacks = 0
@@ -3142,16 +3139,6 @@ private struct ObjectsIntegrationTests {
                     
                     let tracker = CallbackTracker(count: callbacks)
                     
-                    // JS: const subscriptionPromises = [];
-                    // JS: for (let i = 0; i < callbacks; i++) {
-                    // JS:   const promise = new Promise((resolve) => {
-                    // JS:     counter.subscribe(() => {
-                    // JS:       callbacksCalled[i]++;
-                    // JS:       resolve();
-                    // JS:     });
-                    // JS:   });
-                    // JS:   subscriptionPromises.push(promise);
-                    // JS: }
                     async let subscriptionPromise: Void = withCheckedThrowingContinuation { continuation in
                         // Create multiple subscriptions
                         for i in 0..<callbacks {
@@ -3170,23 +3157,6 @@ private struct ObjectsIntegrationTests {
                         }
                     }
                     
-                    // JS: const increments = 3;
-                    // JS: for (let i = 0; i < increments; i++) {
-                    // JS:   const counterUpdatedPromise = waitForCounterUpdate(counter);
-                    // JS:   await objectsHelper.operationRequest(
-                    // JS:     channelName,
-                    // JS:     objectsHelper.counterIncRestOp({
-                    // JS:       objectId: sampleCounterObjectId,
-                    // JS:       number: 1,
-                    // JS:     }),
-                    // JS:   );
-                    // JS:   await counterUpdatedPromise;
-                    // JS:   
-                    // JS:   if (i === 0) {
-                    // JS:     // unsub all after first operation
-                    // JS:     counter.unsubscribeAll();
-                    // JS:   }
-                    // JS: }
                     let increments = 3
                     for i in 0..<increments {
                         let counterUpdatesStream = try counter.updates()
@@ -3203,12 +3173,9 @@ private struct ObjectsIntegrationTests {
                         }
                     }
                     
-                    // JS: await Promise.all(subscriptionPromises);
                     try await subscriptionPromise
                     
-                    // JS: expect(counter.value()).to.equal(3, 'Check counter has final expected value after all increments');
                     #expect(try counter.value == 3, "Check counter has final expected value after all increments")
-                    // JS: callbacksCalled.forEach((x) => expect(x).to.equal(1, 'Check subscription callbacks were called once each'));
                     let callbackCounts = await tracker.getCounts()
                     for count in callbackCounts {
                         #expect(count == 1, "Check subscription callbacks were called once each")
