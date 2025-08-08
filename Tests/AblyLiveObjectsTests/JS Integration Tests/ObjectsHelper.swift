@@ -456,7 +456,7 @@ final class ObjectsHelper: Sendable {
     }
 
     /// Creates a counter increment REST operation
-    func counterIncRestOp(objectId: String, number: Int) -> [String: JSONValue] {
+    func counterIncRestOp(objectId: String, number: Double) -> [String: JSONValue] {
         [
             "operation": .string(Actions.counterInc.stringValue),
             "objectId": .string(objectId),
@@ -465,7 +465,7 @@ final class ObjectsHelper: Sendable {
     }
 
     /// Sends an operation request to the REST API
-    private func operationRequest(channelName: String, opBody: [String: JSONValue]) async throws -> OperationResult {
+    func operationRequest(channelName: String, opBody: [String: JSONValue]) async throws -> OperationResult {
         let path = "/channels/\(channelName)/objects"
 
         do {

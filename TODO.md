@@ -1,0 +1,5 @@
+- [ ] it has missed out some of the primitiveKeyData (e.g. max integer)
+- [ ] the primitiveKeyData need DRYing up — and I need to understand what types they should be
+- [ ] some of the code that checks unsubscribe might be a bit racy — e.g. it might just be that you didn't see an update yet because you dispatched its handling into a `Task`
+- [ ] there are a bunch of `if case` statements in the tests which make me worry that some tests might end up being no-ops
+- [ ] processDeserializedProtocolMessage should really be using the internal queue
