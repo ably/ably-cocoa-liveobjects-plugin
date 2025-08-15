@@ -218,15 +218,10 @@ class LiveCounterViewModel: ObservableObject {
     }
 }
 
-struct ContentView: View {
-    var realtime: ARTRealtime
-    @StateObject private var viewModel: LiveCounterViewModel
+struct LiveCounterClientView: View {
+    @ObservedObject var viewModel: LiveCounterViewModel
+    let clientTitle: String
     
-    init(realtime: ARTRealtime) {
-        self.realtime = realtime
-        self._viewModel = StateObject(wrappedValue: LiveCounterViewModel(realtime: realtime))
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             if viewModel.isLoading {
@@ -235,6 +230,11 @@ struct ContentView: View {
             } else {
                 ScrollView {
                     VStack(spacing: 16) {
+                        // Client identifier
+                        Text(clientTitle)
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.secondary)
+                        
                         // Card container
                         VStack(spacing: 2) {
                             // Header
@@ -275,7 +275,13 @@ struct ContentView: View {
                             .padding(.top, 12)
                         }
                         .padding(24)
-                        .background(.regularMaterial)
+                        .background(
+                            #if os(iOS)
+                            Color(.systemBackground)
+                            #else
+                            Color(NSColor.controlBackgroundColor)
+                            #endif
+                        )
                         .cornerRadius(12)
                         .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
                         .frame(maxWidth: 320)
@@ -291,7 +297,13 @@ struct ContentView: View {
                     .padding(24)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.regularMaterial, in: .rect)
+                .background(
+                    #if os(iOS)
+                    Color(.systemGroupedBackground)
+                    #else
+                    Color(NSColor.windowBackgroundColor)
+                    #endif
+                )
             }
         }
     }
@@ -302,6 +314,44 @@ struct ContentView: View {
         case .green: return Int(viewModel.greenCount)
         case .blue: return Int(viewModel.blueCount)
         }
+    }
+}
+
+struct ContentView: View {
+    var realtime: ARTRealtime
+    @StateObject private var viewModel1: LiveCounterViewModel
+    @StateObject private var viewModel2: LiveCounterViewModel
+    
+    init(realtime: ARTRealtime) {
+        self.realtime = realtime
+        self._viewModel1 = StateObject(wrappedValue: LiveCounterViewModel(realtime: realtime))
+        self._viewModel2 = StateObject(wrappedValue: LiveCounterViewModel(realtime: realtime))
+    }
+
+    var body: some View {
+        #if os(macOS)
+        HStack(spacing: 1) {
+            LiveCounterClientView(viewModel: viewModel1, clientTitle: "Client 1")
+            
+            Divider()
+            
+            LiveCounterClientView(viewModel: viewModel2, clientTitle: "Client 2")
+        }
+        #else
+        TabView {
+            LiveCounterClientView(viewModel: viewModel1, clientTitle: "Client 1")
+                .tabItem {
+                    Image(systemName: "person.fill")
+                    Text("Client 1")
+                }
+            
+            LiveCounterClientView(viewModel: viewModel2, clientTitle: "Client 2")
+                .tabItem {
+                    Image(systemName: "person.2.fill")
+                    Text("Client 2")
+                }
+        }
+        #endif
     }
 }
 
@@ -343,62 +393,58 @@ struct VoteRow: View {
 }
 
 #Preview {
-    // For preview purposes, we'll create a mock setup
-    struct PreviewWrapper: View {
-        var body: some View {
-            VStack(spacing: 16) {
-                // Mock card container
-                VStack(spacing: 2) {
-                    // Header
-                    Text("Vote for your favorite Color")
-                        .font(.system(size: 14, weight: .bold))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.bottom, 8)
-                    
-                    // Vote options
-                    VStack(spacing: 0) {
-                        ForEach(Array(Color.allCases.enumerated()), id: \.offset) { index, color in
-                            VoteRow(
-                                color: color,
-                                count: [42, 28, 15][index], // Mock counts
-                                onVote: { print("Voted for \(color.rawValue)") }
-                            )
-                            
-                            if index < Color.allCases.count - 1 {
-                                Divider()
-                                    .background(SwiftUI.Color.gray.opacity(0.3))
-                            }
-                        }
-                    }
-                    
-                    // Reset button
-                    Button(action: { print("Reset tapped") }) {
-                        Text("Reset")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.primary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(SwiftUI.Color.primary, lineWidth: 1)
-                                    .background(SwiftUI.Color.clear)
-                            )
-                    }
-                    .padding(.top, 12)
-                }
-                .padding(24)
-                .background(.regularMaterial)
-                .cornerRadius(12)
-                .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
-                .frame(maxWidth: 320)
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.regularMaterial, in: .rect)
+    // For preview purposes, we'll create a mock realtime instance
+    class MockRealtime: ARTRealtime {
+        override init() {
+            // Create a mock configuration
+            let options = ARTClientOptions()
+            options.key = "preview-key"
+            super.init(options: options)
         }
     }
     
-    return PreviewWrapper()
+    // Create mock view models with preset data
+    class MockLiveCounterViewModel: LiveCounterViewModel {
+        override init(realtime: ARTRealtime) {
+            super.init(realtime: realtime)
+            // Set some preview data
+            self.redCount = 42
+            self.greenCount = 28
+            self.blueCount = 15
+            self.isLoading = false
+        }
+        
+        override func vote(for color: Color) {
+            // Mock voting behavior for preview
+            switch color {
+            case .red: redCount += 1
+            case .green: greenCount += 1
+            case .blue: blueCount += 1
+            }
+        }
+        
+        override func resetCounters() {
+            redCount = 0
+            greenCount = 0
+            blueCount = 0
+        }
+    }
+    
+    let mockRealtime = MockRealtime()
+    
+    return HStack(spacing: 1) {
+        LiveCounterClientView(
+            viewModel: MockLiveCounterViewModel(realtime: mockRealtime),
+            clientTitle: "Client 1"
+        )
+        
+        Divider()
+        
+        LiveCounterClientView(
+            viewModel: MockLiveCounterViewModel(realtime: mockRealtime),
+            clientTitle: "Client 2"
+        )
+    }
 }
 
 extension ARTRealtimeChannelProtocol {
