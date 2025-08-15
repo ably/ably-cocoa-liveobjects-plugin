@@ -275,7 +275,7 @@ struct ContentView: View {
                             .padding(.top, 12)
                         }
                         .padding(24)
-                        .background(SwiftUI.Color(.systemBackground))
+                        .background(.regularMaterial)
                         .cornerRadius(12)
                         .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
                         .frame(maxWidth: 320)
@@ -291,7 +291,7 @@ struct ContentView: View {
                     .padding(24)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(SwiftUI.Color(.systemGroupedBackground))
+                .background(.regularMaterial, in: .rect)
             }
         }
     }
@@ -387,14 +387,14 @@ struct VoteRow: View {
                     .padding(.top, 12)
                 }
                 .padding(24)
-                .background(SwiftUI.Color(.systemBackground))
+                .background(.regularMaterial)
                 .cornerRadius(12)
                 .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
                 .frame(maxWidth: 320)
             }
             .padding(24)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(SwiftUI.Color(.systemGroupedBackground))
+            .background(.regularMaterial, in: .rect)
         }
     }
     
