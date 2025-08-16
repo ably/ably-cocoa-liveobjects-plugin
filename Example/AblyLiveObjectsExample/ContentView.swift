@@ -78,7 +78,7 @@ class LiveCounterViewModel: ObservableObject {
                     // Handle root updates - this will fire when counters are reset
                     for (keyName, change) in update.update {
                         if change == .updated, let color = VoteColor(rawValue: keyName) {
-                            await self?.subscribeToCounter(color: color)
+                            self?.subscribeToCounter(color: color)
                         }
                     }
                 }
@@ -105,46 +105,39 @@ class LiveCounterViewModel: ObservableObject {
             if let existingValue = try root.get(key: color.rawValue),
                let existingCounter = existingValue.liveCounterValue {
                 // Counter exists, subscribe to it
-                await setCounter(existingCounter, for: color)
-                await subscribeToCounter(color: color)
+                setCounter(existingCounter, for: color)
+                subscribeToCounter(color: color)
             } else {
                 // Counter doesn't exist, create it
                 let newCounter = try await objects.createCounter(count: 0)
                 try await root.set(key: color.rawValue, value: .liveCounter(newCounter))
-                await setCounter(newCounter, for: color)
+                setCounter(newCounter, for: color)
             }
         } catch {
             errorMessage = "Failed to initialize \(color.rawValue) counter: \(error.localizedDescription)"
         }
     }
     
-    private func setCounter(_ counter: any LiveCounter, for color: VoteColor) async {
-        switch color {
-        case .red:
-            redCounter = counter
-            do {
-                redCount = try counter.value
-            } catch {
-                print("Error getting red counter value: \(error)")
+    private func setCounter(_ counter: any LiveCounter, for color: VoteColor) {
+        do {
+            let value = try counter.value
+            switch color {
+            case .red:
+                redCounter = counter
+                redCount = value
+            case .green:
+                greenCounter = counter
+                greenCount = value
+            case .blue:
+                blueCounter = counter
+                blueCount = value
             }
-        case .green:
-            greenCounter = counter
-            do {
-                greenCount = try counter.value
-            } catch {
-                print("Error getting green counter value: \(error)")
-            }
-        case .blue:
-            blueCounter = counter
-            do {
-                blueCount = try counter.value
-            } catch {
-                print("Error getting blue counter value: \(error)")
-            }
+        } catch {
+            errorMessage = "Error getting red counter value: \(error)"
         }
     }
     
-    private func subscribeToCounter(color: VoteColor) async {
+    private func subscribeToCounter(color: VoteColor) {
         do {
             guard let root = self.root,
                   let value = try root.get(key: color.rawValue),
@@ -152,19 +145,19 @@ class LiveCounterViewModel: ObservableObject {
             
             let subscription = try counter.subscribe { [weak self] update, _ in
                 Task { @MainActor in
-                    await self?.updateCounterValue(for: color, counter: counter)
+                    self?.updateCounterValue(for: color, counter: counter)
                 }
             }
             subscribeResponses.append(subscription)
             
             // Update current value
-            await updateCounterValue(for: color, counter: counter)
+            updateCounterValue(for: color, counter: counter)
         } catch {
-            print("Failed to subscribe to \(color.rawValue) counter: \(error)")
+            errorMessage = "Failed to subscribe to \(color.rawValue) counter: \(error)"
         }
     }
     
-    private func updateCounterValue(for color: VoteColor, counter: any LiveCounter) async {
+    private func updateCounterValue(for color: VoteColor, counter: any LiveCounter) {
         do {
             let value = try counter.value
             switch color {
@@ -176,7 +169,7 @@ class LiveCounterViewModel: ObservableObject {
                 blueCount = value
             }
         } catch {
-            print("Error updating \(color.rawValue) counter value: \(error)")
+            errorMessage = "Error updating \(color.rawValue) counter value: \(error)"
         }
     }
     
@@ -266,11 +259,6 @@ struct LiveCounterClientView: View {
                                     .foregroundColor(.primary)
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 8)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 16)
-                                            .stroke(SwiftUI.Color.primary, lineWidth: 1)
-                                            .background(SwiftUI.Color.clear)
-                                    )
                             }
                             .padding(.top, 12)
                         }
@@ -315,7 +303,7 @@ struct ContentView: View {
     }
 
     var body: some View {
-        #if os(macOS)
+        #if os(macOS) || os(tvOS)
         HStack(spacing: 1) {
             LiveCounterClientView(viewModel: viewModel1, clientTitle: "Client 1")
             
@@ -358,13 +346,8 @@ struct VoteRow: View {
                 Text("Vote")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.primary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(SwiftUI.Color.primary, lineWidth: 1)
-                            .background(SwiftUI.Color.clear)
-                    )
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
             }
         }
         .padding(.horizontal, 8)
