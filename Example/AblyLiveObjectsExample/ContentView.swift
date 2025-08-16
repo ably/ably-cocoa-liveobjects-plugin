@@ -2,7 +2,7 @@ import Ably
 import AblyLiveObjects
 import SwiftUI
 
-enum Color: String, CaseIterable {
+enum VoteColor: String, CaseIterable {
     case red = "red"
     case green = "green"
     case blue = "blue"
@@ -77,7 +77,7 @@ class LiveCounterViewModel: ObservableObject {
                 Task { @MainActor in
                     // Handle root updates - this will fire when counters are reset
                     for (keyName, change) in update.update {
-                        if change == .updated, let color = Color(rawValue: keyName) {
+                        if change == .updated, let color = VoteColor(rawValue: keyName) {
                             await self?.subscribeToCounter(color: color)
                         }
                     }
@@ -86,7 +86,7 @@ class LiveCounterViewModel: ObservableObject {
             subscribeResponses.append(rootSubscription)
             
             // Initialize all color counters
-            for color in Color.allCases {
+            for color in VoteColor.allCases {
                 await initializeCounter(for: color)
             }
             
@@ -97,7 +97,7 @@ class LiveCounterViewModel: ObservableObject {
         }
     }
     
-    private func initializeCounter(for color: Color) async {
+    private func initializeCounter(for color: VoteColor) async {
         do {
             guard let root = self.root else { return }
             
@@ -118,7 +118,7 @@ class LiveCounterViewModel: ObservableObject {
         }
     }
     
-    private func setCounter(_ counter: any LiveCounter, for color: Color) async {
+    private func setCounter(_ counter: any LiveCounter, for color: VoteColor) async {
         switch color {
         case .red:
             redCounter = counter
@@ -144,7 +144,7 @@ class LiveCounterViewModel: ObservableObject {
         }
     }
     
-    private func subscribeToCounter(color: Color) async {
+    private func subscribeToCounter(color: VoteColor) async {
         do {
             guard let root = self.root,
                   let value = try root.get(key: color.rawValue),
@@ -164,7 +164,7 @@ class LiveCounterViewModel: ObservableObject {
         }
     }
     
-    private func updateCounterValue(for color: Color, counter: any LiveCounter) async {
+    private func updateCounterValue(for color: VoteColor, counter: any LiveCounter) async {
         do {
             let value = try counter.value
             switch color {
@@ -180,7 +180,7 @@ class LiveCounterViewModel: ObservableObject {
         }
     }
     
-    func vote(for color: Color) {
+    func vote(for color: VoteColor) {
         Task {
             do {
                 let counter: (any LiveCounter)?
@@ -205,7 +205,7 @@ class LiveCounterViewModel: ObservableObject {
                 guard let root = self.root else { return }
                 
                 // Create new counters for each color
-                for color in Color.allCases {
+                for color in VoteColor.allCases {
                     let newCounter = try await objects.createCounter(count: 0)
                     try await root.set(key: color.rawValue, value: .liveCounter(newCounter))
                 }
@@ -245,14 +245,14 @@ struct LiveCounterClientView: View {
                             
                             // Vote options
                             VStack(spacing: 0) {
-                                ForEach(Array(Color.allCases.enumerated()), id: \.offset) { index, color in
+                                ForEach(Array(VoteColor.allCases.enumerated()), id: \.offset) { index, color in
                                     VoteRow(
                                         color: color,
                                         count: countForColor(color),
                                         onVote: { viewModel.vote(for: color) }
                                     )
                                     
-                                    if index < Color.allCases.count - 1 {
+                                    if index < VoteColor.allCases.count - 1 {
                                         Divider()
                                             .background(SwiftUI.Color.gray.opacity(0.3))
                                     }
@@ -275,13 +275,7 @@ struct LiveCounterClientView: View {
                             .padding(.top, 12)
                         }
                         .padding(24)
-                        .background(
-                            #if os(iOS)
-                            Color(.systemBackground)
-                            #else
-                            Color(NSColor.controlBackgroundColor)
-                            #endif
-                        )
+                        .background(.regularMaterial)
                         .cornerRadius(12)
                         .shadow(color: .black.opacity(0.1), radius: 8, x: 0, y: 2)
                         .frame(maxWidth: 320)
@@ -297,18 +291,12 @@ struct LiveCounterClientView: View {
                     .padding(24)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(
-                    #if os(iOS)
-                    Color(.systemGroupedBackground)
-                    #else
-                    Color(NSColor.windowBackgroundColor)
-                    #endif
-                )
+                .background(.thickMaterial)
             }
         }
     }
     
-    private func countForColor(_ color: Color) -> Int {
+    private func countForColor(_ color: VoteColor) -> Int {
         switch color {
         case .red: return Int(viewModel.redCount)
         case .green: return Int(viewModel.greenCount)
@@ -318,14 +306,12 @@ struct LiveCounterClientView: View {
 }
 
 struct ContentView: View {
-    var realtime: ARTRealtime
     @StateObject private var viewModel1: LiveCounterViewModel
     @StateObject private var viewModel2: LiveCounterViewModel
     
-    init(realtime: ARTRealtime) {
-        self.realtime = realtime
-        self._viewModel1 = StateObject(wrappedValue: LiveCounterViewModel(realtime: realtime))
-        self._viewModel2 = StateObject(wrappedValue: LiveCounterViewModel(realtime: realtime))
+    init(realtime1: ARTRealtime, realtime2: ARTRealtime) {
+        self._viewModel1 = StateObject(wrappedValue: LiveCounterViewModel(realtime: realtime1))
+        self._viewModel2 = StateObject(wrappedValue: LiveCounterViewModel(realtime: realtime2))
     }
 
     var body: some View {
@@ -338,25 +324,19 @@ struct ContentView: View {
             LiveCounterClientView(viewModel: viewModel2, clientTitle: "Client 2")
         }
         #else
-        TabView {
+        VStack(spacing: 1) {
             LiveCounterClientView(viewModel: viewModel1, clientTitle: "Client 1")
-                .tabItem {
-                    Image(systemName: "person.fill")
-                    Text("Client 1")
-                }
+            
+            Divider()
             
             LiveCounterClientView(viewModel: viewModel2, clientTitle: "Client 2")
-                .tabItem {
-                    Image(systemName: "person.2.fill")
-                    Text("Client 2")
-                }
         }
         #endif
     }
 }
 
 struct VoteRow: View {
-    let color: Color
+    let color: VoteColor
     let count: Int
     let onVote: () -> Void
     
@@ -389,61 +369,6 @@ struct VoteRow: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 12)
-    }
-}
-
-#Preview {
-    // For preview purposes, we'll create a mock realtime instance
-    class MockRealtime: ARTRealtime {
-        override init() {
-            // Create a mock configuration
-            let options = ARTClientOptions()
-            options.key = "preview-key"
-            super.init(options: options)
-        }
-    }
-    
-    // Create mock view models with preset data
-    class MockLiveCounterViewModel: LiveCounterViewModel {
-        override init(realtime: ARTRealtime) {
-            super.init(realtime: realtime)
-            // Set some preview data
-            self.redCount = 42
-            self.greenCount = 28
-            self.blueCount = 15
-            self.isLoading = false
-        }
-        
-        override func vote(for color: Color) {
-            // Mock voting behavior for preview
-            switch color {
-            case .red: redCount += 1
-            case .green: greenCount += 1
-            case .blue: blueCount += 1
-            }
-        }
-        
-        override func resetCounters() {
-            redCount = 0
-            greenCount = 0
-            blueCount = 0
-        }
-    }
-    
-    let mockRealtime = MockRealtime()
-    
-    return HStack(spacing: 1) {
-        LiveCounterClientView(
-            viewModel: MockLiveCounterViewModel(realtime: mockRealtime),
-            clientTitle: "Client 1"
-        )
-        
-        Divider()
-        
-        LiveCounterClientView(
-            viewModel: MockLiveCounterViewModel(realtime: mockRealtime),
-            clientTitle: "Client 2"
-        )
     }
 }
 

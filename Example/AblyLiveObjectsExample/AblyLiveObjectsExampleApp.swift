@@ -4,16 +4,15 @@ import SwiftUI
 
 @main
 struct AblyLiveObjectsExampleApp: App {
-    @State private var realtime = {
+    private func getRealtime() -> ARTRealtime {
         let clientOptions = ARTClientOptions(key: Secrets.ablyAPIKey)
         clientOptions.plugins = [.liveObjects: AblyLiveObjects.Plugin.self]
-
         return ARTRealtime(options: clientOptions)
-    }()
+    }
 
     var body: some Scene {
         WindowGroup {
-            ContentView(realtime: realtime)
+            ContentView(realtime1: getRealtime(), realtime2: getRealtime())
         }
     }
 }
