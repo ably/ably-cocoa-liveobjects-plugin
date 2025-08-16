@@ -133,7 +133,7 @@ class LiveCounterViewModel: ObservableObject {
                 blueCount = value
             }
         } catch {
-            errorMessage = "Error getting red counter value: \(error)"
+            errorMessage = "Error getting \(color.rawValue) counter value: \(error)"
         }
     }
     
